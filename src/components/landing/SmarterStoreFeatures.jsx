@@ -12,8 +12,8 @@ const features = [
     },
     {
         icon: BrainCircuit,
-        title: "Predictive Modeling of Inventory Sell-Through using Sales Behavior Patterns",
-        description: "Machine learning model predicts which products are most likely to expire unsold.",
+        title: "Admin Panel & AI Analytics",
+        description: "Access your dashboard to manage inventory workflows, sales data, and predictive ML insights.",
         hasBadge: true,
         path: "/admin",
     },

@@ -1,38 +1,14 @@
 import { motion } from "framer-motion";
 import { useInView } from "framer-motion";
 import { useRef } from "react";
-import { Package, CalendarClock, ShoppingCart, Percent, BarChart3, BrainCircuit } from "lucide-react";
+import { ShoppingCart, BrainCircuit } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 const features = [
     {
-        icon: Package,
-        title: "Product Management",
-        description: "Add, categorize, and manage all your products with barcode scanning and batch tracking.",
-        path: "/products",
-    },
-    {
-        icon: CalendarClock,
-        title: "Inventory & Expiry Tracking",
-        description: "Real-time stock levels with automatic expiry date monitoring and FIFO tracking.",
-        path: "/inventory",
-    },
-    {
         icon: ShoppingCart,
-        title: "Sales Recording",
-        description: "Quick POS-style sales entry with daily summaries and product-level tracking.",
+        title: "Staff Hub",
+        description: "Quick POS-style sales entry, inventory scanning, and task management for your store.",
         path: "/staff",
-    },
-    {
-        icon: Percent,
-        title: "Discount & Alerts",
-        description: "Smart alerts for approaching expiry dates with automated discount suggestions.",
-        path: "/discounts",
-    },
-    {
-        icon: BarChart3,
-        title: "Reports & Dashboard",
-        description: "Beautiful analytics dashboard with waste reports, sales trends, and stock insights.",
-        path: "/dashboard",
     },
     {
         icon: BrainCircuit,
@@ -58,7 +34,7 @@ const SmarterStoreFeatures = () => {
                     </p>
                 </motion.div>
 
-                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-7xl mx-auto">
+                <div className="grid md:grid-cols-2 gap-6 max-w-4xl mx-auto">
                     {features.map((feature, i) => (<motion.div onClick={() => navigate(feature.path)} key={feature.title} initial={{ opacity: 0, y: 30 }} animate={isInView ? { opacity: 1, y: 0 } : {}} transition={{ delay: i * 0.1, duration: 0.6 }} className={`cursor-pointer relative bg-white rounded-[2rem] p-8 hover:shadow-2xl hover:scale-[1.02] transition-all group ${feature.hasBadge
                 ? "border-2 border-[#9D1967]/30 shadow-[#9D1967]/10"
                 : "border-2 border-[#0F172A]/20 shadow-lg shadow-black/5"}`}>

@@ -35,10 +35,11 @@ export default function NotificationsPage() {
   };
 
   useEffect(() => {
-    if (!me) navigate("/login");
-    else load();
+    if (me) {
+      load();
+    }
     // eslint-disable-next-line
-  }, []);
+  }, [me]);
 
   const unreadCount = useMemo(
     () => mails.filter((m) => String(m.status || "").toUpperCase() !== "READ").length,
@@ -81,7 +82,7 @@ export default function NotificationsPage() {
         </div>
 
         <div className="noti-actions">
-          <button className="btn ghost" onClick={() => navigate("/home")}>
+          <button className="btn ghost" onClick={() => window.history.back()}>
             Back
           </button>
           <button className="btn" onClick={load} disabled={loading}>

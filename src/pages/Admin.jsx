@@ -401,7 +401,7 @@ const UserManagement = ({ users, setUsers }) => {
                 </div>
                 <div>
                   <p className="font-black text-[#0F172A]">{user.name}</p>
-                  <p className="text-[10px] font-bold text-black/30 uppercase">@{user.username}</p>
+                  <p className="text-[10px] font-bold text-black/30">@{user.username}</p>
                 </div>
               </TableCell>
               <TableCell>

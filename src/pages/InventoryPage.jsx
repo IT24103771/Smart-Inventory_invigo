@@ -3,7 +3,7 @@ import "../styles/Inventory.css";
 
 const API = "/api";
 
-const InventoryPage = () => {
+const InventoryPage = ({ role = "Staff" }) => {
   const [products, setProducts] = useState([]);
   const [rows, setRows] = useState([]);
   const [error, setError] = useState("");
@@ -268,7 +268,7 @@ const InventoryPage = () => {
                     <th className="right">Qty</th>
                     <th>Expiry</th>
                     <th>Status</th>
-                    <th className="right">Actions</th>
+                    {role === "Admin" && <th className="right">Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -283,17 +283,19 @@ const InventoryPage = () => {
                           {r.status}
                         </span>
                       </td>
-                      <td className="right">
-                        <button className="btn btn-small" onClick={() => startEdit(r)}>
-                          Edit
-                        </button>
-                        <button
-                          className="btn btn-small btn-danger"
-                          onClick={() => remove(r.id)}
-                        >
-                          Delete
-                        </button>
-                      </td>
+                      {role === "Admin" && (
+                        <td className="right">
+                          <button className="btn btn-small" onClick={() => startEdit(r)}>
+                            Edit
+                          </button>
+                          <button
+                            className="btn btn-small btn-danger"
+                            onClick={() => remove(r.id)}
+                          >
+                            Delete
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>

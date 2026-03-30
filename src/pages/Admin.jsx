@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { LayoutDashboard, Package, AlertTriangle, BarChart3, Settings, Menu, TrendingUp, Users, UserPlus, Plus, Clock, Eye, EyeOff, Edit2, Trash2, Power, } from "lucide-react";
+import { LayoutDashboard, Package, AlertTriangle, BarChart3, Settings, Menu, TrendingUp, Users, UserPlus, Plus, Clock, Eye, EyeOff, Edit2, Trash2, Power, Tag } from "lucide-react";
 import InvigoLogo from "@/components/InvigoLogo";
 import LogoutButton from "@/components/LogoutButton";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,6 +14,9 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, } from "@/components/ui/select";
 import { getUsers, createUser, updateUser, deleteUser } from "@/lib/api";
 import SalesModule from "@/components/SalesModule";
+import InventoryPage from "./InventoryPage";
+import DiscountsPage from "./DiscountsPage";
+import AdminAlertsPage from "./AdminAlertsPage";
 // --- Types & Data ---
 // Removed initialUsers since we fetch from backend
 const adminStats = [
@@ -35,6 +38,7 @@ const Sidebar = ({ open, setOpen }) => {
         { label: "Dashboard", href: "/admin", icon: LayoutDashboard },
         { label: "Sales Data", href: "/admin/sales", icon: BarChart3 },
         { label: "Inventory", href: "/admin/inventory", icon: Package },
+        { label: "Discounts", href: "/admin/discounts", icon: Tag },
         { label: "Alerts", href: "/admin/alerts", icon: AlertTriangle },
         { label: "Reports", href: "/admin/reports", icon: BarChart3 },
         { label: "User Control", href: "/admin/users", icon: Users },
@@ -556,6 +560,8 @@ const Admin = () => {
             return "User Management";
         if (location.pathname === "/admin/inventory")
             return "Inventory Suite";
+        if (location.pathname === "/admin/discounts")
+            return "Discount Management";
         if (location.pathname === "/admin/sales")
             return "Sales Recording & Data";
         if (location.pathname === "/admin/alerts")
@@ -579,13 +585,23 @@ const Admin = () => {
           <div className="max-w-7xl mx-auto">
             <AnimatePresence mode="wait">
               <motion.div key={location.pathname} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.3 }}>
-                {location.pathname === "/admin/users" ? (<UserManagement users={users} setUsers={setUsers}/>) : location.pathname === "/admin/sales" ? (<SalesModule role="Admin"/>) : location.pathname === "/admin" || location.pathname === "/admin/" ? (<AdminDashboardHome />) : (<div className="text-center py-24">
-                    <div className="h-20 w-20 bg-[#0F172A]/5 rounded-3xl flex items-center justify-center mx-auto mb-6">
-                      <Settings size={40} className="text-[#0F172A]/20"/>
+                {(() => {
+                  if (location.pathname === "/admin/users") return <UserManagement users={users} setUsers={setUsers}/>;
+                  if (location.pathname === "/admin/sales") return <SalesModule role="Admin"/>;
+                  if (location.pathname === "/admin/inventory") return <InventoryPage role="Admin" />;
+                  if (location.pathname === "/admin/discounts") return <DiscountsPage role="Admin" />;
+                  if (location.pathname === "/admin/alerts") return <AdminAlertsPage />;
+                  if (location.pathname === "/admin" || location.pathname === "/admin/") return <AdminDashboardHome />;
+                  return (
+                    <div className="text-center py-24">
+                      <div className="h-20 w-20 bg-[#0F172A]/5 rounded-3xl flex items-center justify-center mx-auto mb-6">
+                        <Settings size={40} className="text-[#0F172A]/20"/>
+                      </div>
+                      <h2 className="text-2xl font-black text-[#0F172A]">Section Modules</h2>
+                      <p className="text-[#0F172A]/40 font-bold uppercase tracking-widest text-xs mt-2">Expansion Module Coming Soon</p>
                     </div>
-                    <h2 className="text-2xl font-black text-[#0F172A]">Section Modules</h2>
-                    <p className="text-[#0F172A]/40 font-bold uppercase tracking-widest text-xs mt-2">Expansion Module Coming Soon</p>
-                  </div>)}
+                  );
+                })()}
               </motion.div>
             </AnimatePresence>
           </div>

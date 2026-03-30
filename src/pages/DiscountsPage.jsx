@@ -3,7 +3,7 @@ import "../styles/Discounts.css";
 
 const API_BASE = "/api";
 
-const DiscountsPage = () => {
+const DiscountsPage = ({ role = "Staff" }) => {
   const [products, setProducts] = useState([]);
   const [discounts, setDiscounts] = useState([]);
 
@@ -374,31 +374,33 @@ const DiscountsPage = () => {
 
                     <span
                       className={`status ${d.active ? "active" : "inactive"}`}
-                      style={{ cursor: "pointer" }}
-                      title="Click to toggle"
-                      onClick={() => toggleActive(d)}
+                      style={{ cursor: role === "Admin" ? "pointer" : "default" }}
+                      title={role === "Admin" ? "Click to toggle" : ""}
+                      onClick={() => role === "Admin" && toggleActive(d)}
                     >
                       {d.active ? "Active" : "Inactive"}
                     </span>
 
-                    {!isEditing ? (
-                      <div className="actions">
-                        <button className="btn-outline" onClick={() => startEdit(d)}>
-                          Edit
-                        </button>
-                        <button className="btn-danger" onClick={() => handleDelete(d.id)}>
-                          Delete
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="actions">
-                        <button className="btn-primary" onClick={() => handleSaveEdit(d)}>
-                          Save
-                        </button>
-                        <button className="btn-outline" onClick={cancelEdit}>
-                          Cancel
-                        </button>
-                      </div>
+                    {role === "Admin" && (
+                      !isEditing ? (
+                        <div className="actions">
+                          <button className="btn-outline" onClick={() => startEdit(d)}>
+                            Edit
+                          </button>
+                          <button className="btn-danger" onClick={() => handleDelete(d.id)}>
+                            Delete
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="actions">
+                          <button className="btn-primary" onClick={() => handleSaveEdit(d)}>
+                            Save
+                          </button>
+                          <button className="btn-outline" onClick={cancelEdit}>
+                            Cancel
+                          </button>
+                        </div>
+                      )
                     )}
                   </div>
                 </div>

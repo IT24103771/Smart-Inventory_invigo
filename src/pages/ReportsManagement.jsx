@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { getCurrentUser } from "@/lib/auth";
 import ReportsStats from "@/components/reports/ReportsStats";
 import ReportsFilters from "@/components/reports/ReportsFilters";
@@ -8,83 +8,24 @@ import ReportPreviewModal from "@/components/reports/ReportPreviewModal";
 import { Plus } from "lucide-react";
 import { toast } from "sonner"; // Using 'sonner' which is imported in App.jsx
 
-const initialMockReports = [
-    {
-        id: "RPT-001",
-        reportTitle: "March Expired Items Loss Report",
-        reportType: "Expired Items Report",
-        description: "Analysis of all stock that expired across shelves during the previous month.",
-        generatedBy: "Admin User",
-        generatedDate: "2026-03-01",
-        dateRangeStart: "2026-03-01",
-        dateRangeEnd: "2026-03-31",
-        status: "Published",
-        visibility: "All",
-        format: "PDF",
-        priority: "High",
-        notes: "Requested by regional manager.",
-        published: true,
-        archived: false,
-        favorite: true
-    },
-    {
-        id: "RPT-002",
-        reportTitle: "AI High Risk Inventory Prediction",
-        reportType: "AI Risk Prediction Report",
-        description: "Predictive model output flagging incoming batches likely to go to waste.",
-        generatedBy: "System AI",
-        generatedDate: "2026-04-01",
-        dateRangeStart: "2026-04-01",
-        dateRangeEnd: "2026-04-14",
-        status: "Generated",
-        visibility: "Admin Only",
-        format: "Dashboard View",
-        priority: "Critical",
-        notes: "",
-        published: false,
-        archived: false,
-        favorite: true
-    },
-    {
-        id: "RPT-003",
-        reportTitle: "Q1 Discount Performance Review",
-        reportType: "Discount Report",
-        description: "Assessing the monetary recovery generated via dynamic discounting.",
-        generatedBy: "Store Manager",
-        generatedDate: "",
-        dateRangeStart: "2026-01-01",
-        dateRangeEnd: "2026-03-31",
-        status: "Pending",
-        visibility: "Staff",
-        format: "Excel",
-        priority: "Medium",
-        notes: "Awaiting final batch data.",
-        published: false,
-        archived: false,
-        favorite: false
-    },
-    {
-        id: "RPT-004",
-        reportTitle: "Dairy Batch Expiry Monitoring",
-        reportType: "Near Expiry Report",
-        description: "",
-        generatedBy: "Staff Member",
-        generatedDate: "2026-04-02",
-        dateRangeStart: "2026-04-02",
-        dateRangeEnd: "2026-04-09",
-        status: "Archived",
-        visibility: "All",
-        format: "CSV",
-        priority: "Low",
-        notes: "",
-        published: false,
-        archived: true,
-        favorite: false
-    }
-];
-
 const ReportsManagement = ({ role }) => {
-    const [reports, setReports] = useState(initialMockReports);
+    const [reports, setReports] = useState(() => {
+        const saved = localStorage.getItem("invigo_reports");
+        return saved ? JSON.parse(saved) : [];
+    });
+
+    useEffect(() => {
+        localStorage.setItem("invigo_reports", JSON.stringify(reports));
+    }, [reports]);
+
+    useEffect(() => {
+        const handleStorage = () => {
+            const saved = localStorage.getItem("invigo_reports");
+            if (saved) setReports(JSON.parse(saved));
+        };
+        window.addEventListener("storage", handleStorage);
+        return () => window.removeEventListener("storage", handleStorage);
+    }, []);
     const [filters, setFilters] = useState({ search: '', type: '', status: '', priority: '', visibility: '' });
     
     // Modal state
@@ -189,9 +130,17 @@ const ReportsManagement = ({ role }) => {
         setReports(prev => prev.map(r => r.id === id ? { ...r, favorite: !r.favorite } : r));
     };
 
-    const handleDownload = (report) => {
-        // Simulate download
-        toast.success(`Exporting ${report.reportTitle} as ${report.format}...`);
+    const handleDownload = async (report) => {
+        if (report.pdfDataUri) {
+            toast.info("Preparing download...");
+            const a = document.createElement("a");
+            a.href = report.pdfDataUri;
+            a.download = `dashboard-summary-${report.id}.pdf`;
+            a.click();
+            toast.success("Download complete");
+        } else {
+            toast.error("File stream expired or no longer available.");
+        }
     };
 
     return (

@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { LayoutDashboard, Package, AlertTriangle, BarChart3, Settings, Menu, TrendingUp, Users, UserPlus, Plus, Clock, Eye, EyeOff, Edit2, Trash2, Power, Tag } from "lucide-react";
+import { LayoutDashboard, Package, AlertTriangle, BarChart3, Settings, Menu, TrendingUp, Users, UserPlus, Plus, Clock, Eye, EyeOff, Edit2, Trash2, Power, Tag, Home } from "lucide-react";
 import InvigoLogo from "@/components/InvigoLogo";
 import LogoutButton from "@/components/LogoutButton";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -36,6 +36,7 @@ const expiringItems = [
 const Sidebar = ({ open, setOpen }) => {
   const location = useLocation();
   const navItems = [
+    { label: "Home Page", href: "/", icon: Home },
     { label: "Dashboard", href: "/admin", icon: LayoutDashboard },
     { label: "Sales Data", href: "/admin/sales", icon: BarChart3 },
     { label: "Inventory", href: "/admin/inventory", icon: Package },
@@ -552,6 +553,8 @@ const UserManagement = ({ users, setUsers }) => {
     </Dialog>
   </div>);
 };
+import ReportsManagement from "./ReportsManagement";
+
 const Admin = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [users, setUsers] = useState([]); // Init empty, fetch on mount
@@ -592,6 +595,7 @@ const Admin = () => {
                 if (location.pathname === "/admin/inventory") return <InventoryPage role="Admin" />;
                 if (location.pathname === "/admin/discounts") return <DiscountsPage role="Admin" />;
                 if (location.pathname === "/admin/alerts") return <AdminAlertsPage />;
+                if (location.pathname === "/admin/reports") return <ReportsManagement role="ADMIN" />;
                 if (location.pathname === "/admin" || location.pathname === "/admin/") return <Dashboard />;
                 return (
                   <div className="text-center py-24">

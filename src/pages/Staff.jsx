@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { LayoutDashboard, Menu, Search, CheckCircle2, Clock, ChevronRight, BellRing, Zap, ShieldCheck, Settings, Sparkles, UserCircle, Package, Percent, TrendingUp } from "lucide-react";
+import { LayoutDashboard, Menu, Search, CheckCircle2, Clock, ChevronRight, BellRing, Zap, ShieldCheck, Settings, Sparkles, UserCircle, Package, Percent, TrendingUp, Home, BarChart3 } from "lucide-react";
 import InvigoLogo from "@/components/InvigoLogo";
 import LogoutButton from "@/components/LogoutButton";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import Products from "./Products";
 import InventoryPage from "./InventoryPage";
 import DiscountsPage from "./DiscountsPage";
 import NotificationsPage from "./NotificationsPage";
+import ReportsManagement from "./ReportsManagement";
 
 const staffStats = [
     { label: "Tasks Done", value: "24", sub: "8 pending", icon: CheckCircle2, color: "text-[#007A5E]", bg: "bg-[#007A5E]/10" },
@@ -21,13 +22,14 @@ const staffStats = [
 const Sidebar = ({ open, setOpen }) => {
     const location = useLocation();
     const navItems = [
+        { label: "Home Page", href: "/", icon: Home },
         { label: "Staff Desk", href: "/staff", icon: LayoutDashboard },
         { label: "Products", href: "/staff/products", icon: Package },
         { label: "Inventory", href: "/staff/inventory", icon: Search },
         { label: "Discounts", href: "/staff/discounts", icon: Percent },
         { label: "My Alerts", href: "/staff/alerts", icon: BellRing },
         { label: "Sales Entry", href: "/staff/sales", icon: CheckCircle2 },
-        { label: "Activity Log", href: "/staff/reports", icon: Clock },
+        { label: "Reports", href: "/staff/reports", icon: BarChart3 },
         { label: "My Profile", href: "/staff/profile", icon: UserCircle },
     ];
     return (<>
@@ -187,6 +189,7 @@ const Staff = () => {
                   if (location.pathname === "/staff/inventory") return <InventoryPage />;
                   if (location.pathname === "/staff/discounts") return <DiscountsPage />;
                   if (location.pathname === "/staff/alerts") return <NotificationsPage />;
+                  if (location.pathname === "/staff/reports") return <ReportsManagement role="STAFF" />;
                   
                   return (
                     <div className="text-center py-24">

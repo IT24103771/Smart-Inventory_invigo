@@ -1,15 +1,30 @@
 import { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Menu, X, ArrowRight } from "lucide-react";
 import InvigoLogo from "@/components/InvigoLogo";
+import { isLoggedIn, logout } from "@/lib/auth";
 const navLinks = [
     { label: "Features", href: "#features" },
     { label: "How it Works", href: "#how-it-works" },
 ];
 const Navbar = () => {
+    const navigate = useNavigate();
     const [isScrolled, setIsScrolled] = useState(false);
     const [mobileOpen, setMobileOpen] = useState(false);
+    const [loggedIn, setLoggedIn] = useState(isLoggedIn());
+
+    useEffect(() => {
+        // Just checking on mount is fine for mostly static navbar, 
+        // but if they navigate back we can recheck
+        setLoggedIn(isLoggedIn());
+    }, []);
+
+    const handleLogout = () => {
+        logout();
+        setLoggedIn(false);
+        navigate("/");
+    };
     useEffect(() => {
         const handleScroll = () => {
             setIsScrolled(window.scrollY > 20);
@@ -37,10 +52,21 @@ const Navbar = () => {
                 {link.label}
                 <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-[#007A5E] transition-all group-hover:w-full"/>
               </a>))}
-            <Link to="/login" className="px-6 py-2.5 rounded-xl bg-[#0F172A] text-white text-sm font-bold shadow-lg hover:scale-105 active:scale-95 transition-all flex items-center gap-2">
-              Login
-              <ArrowRight size={16}/>
-            </Link>
+            {loggedIn ? (
+              <>
+                <Link to="/profile" className="px-6 py-2.5 rounded-xl bg-[#007A5E] text-white text-sm font-bold shadow-lg hover:scale-105 active:scale-95 transition-all flex items-center gap-2">
+                  My Profile
+                </Link>
+                <button onClick={handleLogout} className="px-6 py-2.5 rounded-xl bg-[#0F172A] text-white text-sm font-bold shadow-lg hover:scale-105 active:scale-95 transition-all flex items-center gap-2">
+                  Logout
+                </button>
+              </>
+            ) : (
+              <Link to="/login" className="px-6 py-2.5 rounded-xl bg-[#0F172A] text-white text-sm font-bold shadow-lg hover:scale-105 active:scale-95 transition-all flex items-center gap-2">
+                Login
+                <ArrowRight size={16}/>
+              </Link>
+            )}
           </div>
 
           {/* Mobile Toggle */}
@@ -57,9 +83,20 @@ const Navbar = () => {
               {navLinks.map((link) => (<a key={link.label} href={link.href} className="text-lg font-bold text-[#0F172A] hover:text-[#007A5E]" onClick={() => setMobileOpen(false)}>
                   {link.label}
                 </a>))}
-              <Link to="/login" onClick={() => setMobileOpen(false)} className="w-full py-4 text-center rounded-2xl bg-[#007A5E] text-white font-bold shadow-lg">
-                Login to Portal
-              </Link>
+              {loggedIn ? (
+                <>
+                  <Link to="/profile" onClick={() => setMobileOpen(false)} className="w-full py-4 text-center rounded-2xl bg-[#007A5E] text-white font-bold shadow-lg">
+                    My Profile
+                  </Link>
+                  <button onClick={() => { handleLogout(); setMobileOpen(false); }} className="w-full py-4 text-center rounded-2xl bg-[#0F172A] text-white font-bold shadow-lg">
+                    Logout
+                  </button>
+                </>
+              ) : (
+                <Link to="/login" onClick={() => setMobileOpen(false)} className="w-full py-4 text-center rounded-2xl bg-[#007A5E] text-white font-bold shadow-lg">
+                  Login to Portal
+                </Link>
+              )}
             </div>
           </motion.div>)}
       </AnimatePresence>

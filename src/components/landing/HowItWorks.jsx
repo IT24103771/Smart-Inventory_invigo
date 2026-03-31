@@ -2,6 +2,7 @@ import { motion, useInView } from "framer-motion";
 import { useRef } from "react";
 import { ScanBarcode, Brain, BellRing, TrendingUp, ChevronRight, ArrowRight } from "lucide-react";
 import { Link } from "react-router-dom";
+import { isLoggedIn, hasRole } from "@/lib/auth";
 
 const steps = [
     {
@@ -36,9 +37,19 @@ const steps = [
         bg: "bg-[#007A5E]/10",
     },
 ];
+
 const HowItWorks = () => {
     const ref = useRef(null);
     const isInView = useInView(ref, { once: true, margin: "-100px" });
+
+    const getTargetData = () => {
+        if (!isLoggedIn()) return { label: "Deploy Invigo in 5 Minutes", path: "/login" };
+        if (hasRole("ADMIN")) return { label: "Go to Admin Panel", path: "/admin" };
+        return { label: "Go to Staff Hub", path: "/staff" };
+    };
+
+    const target = getTargetData();
+
     return (<section id="how-it-works" ref={ref} className="relative py-24 lg:py-32 bg-muted/30">
       <div className="container mx-auto px-4">
         <div className="text-center mb-20">
@@ -69,8 +80,8 @@ const HowItWorks = () => {
         </div>
 
         <motion.div initial={{ opacity: 0, y: 20 }} animate={isInView ? { opacity: 1, y: 0 } : {}} transition={{ delay: 0.8 }} className="mt-20 flex justify-center">
-          <Link to="/login" className="px-10 py-5 rounded-[2rem] bg-[#0F172A] text-white font-black text-xl hover:scale-105 transition-all shadow-2xl flex items-center gap-4">
-            Deploy Invigo in 5 Minutes
+          <Link to={target.path} className="px-10 py-5 rounded-[2rem] bg-[#0F172A] text-white font-black text-xl hover:scale-105 transition-all shadow-2xl flex items-center gap-4">
+            {target.label}
             <ArrowRight size={24}/>
           </Link>
         </motion.div>

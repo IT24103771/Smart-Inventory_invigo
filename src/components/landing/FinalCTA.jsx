@@ -2,10 +2,20 @@ import { motion, useInView } from "framer-motion";
 import { useRef } from "react";
 import { Sparkles, ArrowRight } from "lucide-react";
 import { Link } from "react-router-dom";
+import { isLoggedIn, hasRole } from "@/lib/auth";
 
 const FinalCTA = () => {
     const ref = useRef(null);
     const isInView = useInView(ref, { once: true, margin: "-100px" });
+
+    const getTargetData = () => {
+        if (!isLoggedIn()) return { label: "Log In to Dashboard", path: "/login" };
+        if (hasRole("ADMIN")) return { label: "Go to Admin Panel", path: "/admin" };
+        return { label: "Go to Staff Hub", path: "/staff" };
+    };
+
+    const target = getTargetData();
+
     return (<section id="cta" ref={ref} className="relative py-24 lg:py-32 bg-transparent">
 
       <div className="container relative mx-auto px-4">
@@ -27,8 +37,8 @@ const FinalCTA = () => {
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-6">
-            <Link to='/login' className="px-12 py-6 rounded-3xl bg-[#0F172A] text-white font-black text-xl shadow-2xl hover:scale-105 active:scale-95 transition-all flex items-center gap-3 w-full sm:w-auto">
-              Log In to Dashboard
+            <Link to={target.path} className="px-12 py-6 rounded-3xl bg-[#0F172A] text-white font-black text-xl shadow-2xl hover:scale-105 active:scale-95 transition-all flex items-center gap-3 w-full sm:w-auto">
+              {target.label}
               <ArrowRight size={24}/>
             </Link>
           </div>

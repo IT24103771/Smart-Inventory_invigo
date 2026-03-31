@@ -3,6 +3,7 @@ import { useInView } from "framer-motion";
 import { useRef } from "react";
 import { ShoppingCart, BrainCircuit } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { isLoggedIn, hasRole } from "@/lib/auth";
 const features = [
     {
         icon: ShoppingCart,
@@ -22,6 +23,29 @@ const SmarterStoreFeatures = () => {
     const navigate = useNavigate();
     const ref = useRef(null);
     const isInView = useInView(ref, { once: true, margin: "-100px" });
+
+    const handleFeatureClick = (featureTitle, featurePath) => {
+        if (!isLoggedIn()) {
+            navigate("/login");
+            return;
+        }
+
+        if (featureTitle === "Staff Hub") {
+            if (hasRole("ADMIN", "STAFF")) {
+                navigate("/staff");
+            } else {
+                navigate("/login");
+            }
+        } else if (featureTitle.includes("Admin Panel")) {
+            if (hasRole("ADMIN")) {
+                navigate("/admin");
+            } else {
+                navigate("/login");
+            }
+        } else {
+            navigate(featurePath);
+        }
+    };
     return (<section ref={ref} className="relative py-24">
             <div className="container mx-auto px-4">
                 <motion.div initial={{ opacity: 0, y: 20 }} animate={isInView ? { opacity: 1, y: 0 } : {}} transition={{ duration: 0.8 }} className="text-center max-w-3xl mx-auto mb-16">
@@ -35,7 +59,7 @@ const SmarterStoreFeatures = () => {
                 </motion.div>
 
                 <div className="grid md:grid-cols-2 gap-6 max-w-4xl mx-auto">
-                    {features.map((feature, i) => (<motion.div onClick={() => navigate(feature.path)} key={feature.title} initial={{ opacity: 0, y: 30 }} animate={isInView ? { opacity: 1, y: 0 } : {}} transition={{ delay: i * 0.1, duration: 0.6 }} className={`cursor-pointer relative bg-white rounded-[2rem] p-8 hover:shadow-2xl hover:scale-[1.02] transition-all group ${feature.hasBadge
+                    {features.map((feature, i) => (<motion.div onClick={() => handleFeatureClick(feature.title, feature.path)} key={feature.title} initial={{ opacity: 0, y: 30 }} animate={isInView ? { opacity: 1, y: 0 } : {}} transition={{ delay: i * 0.1, duration: 0.6 }} className={`cursor-pointer relative bg-white rounded-[2rem] p-8 hover:shadow-2xl hover:scale-[1.02] transition-all group ${feature.hasBadge
                 ? "border-2 border-[#9D1967]/30 shadow-[#9D1967]/10"
                 : "border-2 border-[#0F172A]/20 shadow-lg shadow-black/5"}`}>
                             {feature.hasBadge && (<div className="absolute top-6 right-6">

@@ -42,14 +42,14 @@ const Dashboard = () => {
     }
   };
 
-  // ✅ Generate report (CSV download) + show report id
+  // ✅ Generate report (PDF download) + show report id
   const generateReport = async () => {
     try {
       setReportLoading(true);
       setReportMsg("");
       setError("");
 
-      const res = await fetch(`${API}/api/reports/dashboard-summary.csv`);
+      const res = await fetch(`${API}/api/reports/dashboard-summary.pdf`);
 
       if (!res.ok) throw new Error("Report download failed");
 
@@ -57,7 +57,7 @@ const Dashboard = () => {
       const contentDisposition = res.headers.get("content-disposition");
 
       // use filename from header if available, else fallback
-      let filename = "dashboard-summary.csv";
+      let filename = "dashboard-summary.pdf";
       if (contentDisposition && contentDisposition.includes("filename=")) {
         const raw = contentDisposition.split("filename=")[1];
         filename = raw.replaceAll('"', "").trim();

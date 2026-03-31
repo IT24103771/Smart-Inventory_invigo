@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Mail, Lock, Sparkles, ArrowRight, ShieldCheck, Zap, Eye, EyeOff } from "lucide-react";
@@ -7,8 +7,21 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { loginUser } from "@/lib/api";
+import { isLoggedIn, hasRole } from "@/lib/auth";
+
 const Login = () => {
     const navigate = useNavigate();
+
+    useEffect(() => {
+        if (isLoggedIn()) {
+            if (hasRole("ADMIN")) {
+                navigate("/admin");
+            } else {
+                navigate("/staff");
+            }
+        }
+    }, [navigate]);
+
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
     const [error, setError] = useState("");

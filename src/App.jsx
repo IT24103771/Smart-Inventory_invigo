@@ -15,6 +15,9 @@ import Products from "./pages/Products";
 import NotificationsPage from "./pages/NotificationsPage";
 import MailsAdminPage from "./pages/MailsAdminPage";
 
+import Profile from "./pages/Profile";
+import ProtectedRoute from "./components/ProtectedRoute";
+
 const queryClient = new QueryClient();
 const App = () => (<QueryClientProvider client={queryClient}>
     <TooltipProvider>
@@ -24,8 +27,30 @@ const App = () => (<QueryClientProvider client={queryClient}>
         <Routes>
           <Route path="/" element={<Index />}/>
           <Route path="/login" element={<Login />}/>
-          <Route path="/admin/*" element={<Admin />}/>
-          <Route path="/staff/*" element={<Staff />}/>
+          <Route 
+            path="/admin/*" 
+            element={
+              <ProtectedRoute allowedRoles={['ADMIN']}>
+                <Admin />
+              </ProtectedRoute>
+            }
+          />
+          <Route 
+            path="/staff/*" 
+            element={
+              <ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}>
+                <Staff />
+              </ProtectedRoute>
+            }
+          />
+          <Route 
+            path="/profile" 
+            element={
+              <ProtectedRoute>
+                <Profile />
+              </ProtectedRoute>
+            }
+          />
           {/* CUSTOM ROUTES */}
           <Route path="/dashboard" element={<Dashboard />}/>
           <Route path="/discounts" element={<DiscountsPage />}/>

@@ -324,6 +324,17 @@ export default function SalesModule({ role }) {
     };
 
     const validateItems = () => {
+        // Validate sale date before line items
+        if (!saleDate) {
+            throw new Error("Sale date is required.");
+        }
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const saleDateObj = new Date(saleDate + "T00:00:00");
+        if (saleDateObj > today) {
+            throw new Error("Sale date cannot be in the future.");
+        }
+
         const cleanedItems = items.map((item) => {
             const batch = getBatchForItem(item);
             return {
@@ -342,6 +353,9 @@ export default function SalesModule({ role }) {
             }
             if (!item.quantity || item.quantity <= 0) {
                 throw new Error("Quantity must be at least 1.");
+            }
+            if (!Number.isInteger(item.quantity)) {
+                throw new Error("Quantity must be a whole number.");
             }
 
             const batchQty = toNumber(item.batch?.quantity, 0);

@@ -29,8 +29,17 @@ const Login = () => {
     const [showPassword, setShowPassword] = useState(false);
     const handleLogin = async (e) => {
         e.preventDefault();
-        if (!username || !password) {
+        const trimmedUser = username.trim();
+        if (!trimmedUser || !password) {
             setError("Please fill in both username and password.");
+            return;
+        }
+        if (trimmedUser.length < 3) {
+            setError("Username must be at least 3 characters.");
+            return;
+        }
+        if (password.length < 6) {
+            setError("Password must be at least 6 characters.");
             return;
         }
         setError("");

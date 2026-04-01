@@ -76,6 +76,7 @@ const DiscountsPage = ({ role = "Staff" }) => {
     if (!selectedProductId) return "Please select a product.";
     const pct = Number(discountPercent);
     if (!discountPercent || Number.isNaN(pct)) return "Please enter a valid discount %.";
+    if (!Number.isInteger(pct)) return "Discount % must be a whole number.";
     if (pct <= 0 || pct > 90) return "Discount must be between 1 and 90%.";
     return "";
   };
@@ -83,6 +84,7 @@ const DiscountsPage = ({ role = "Staff" }) => {
   const validateEdit = () => {
     const pct = Number(editDiscountPercent);
     if (!editDiscountPercent || Number.isNaN(pct)) return "Please enter a valid discount %.";
+    if (!Number.isInteger(pct)) return "Discount % must be a whole number.";
     if (pct <= 0 || pct > 90) return "Discount must be between 1 and 90%.";
     return "";
   };

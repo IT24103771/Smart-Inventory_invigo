@@ -254,6 +254,19 @@ const UserManagement = ({ users, setUsers }) => {
       setError("Please fill in all fields to continue.");
       return;
     }
+    const trimmedUsername = formData.username.trim();
+    if (trimmedUsername.length < 3 || trimmedUsername.length > 50) {
+      setError("Username must be between 3 and 50 characters.");
+      return;
+    }
+    if (!/^[a-zA-Z0-9._@]+$/.test(trimmedUsername)) {
+      setError("Username may only contain letters, digits, dots, underscores, and @.");
+      return;
+    }
+    if (formData.name.trim().length < 2) {
+      setError("Full name must be at least 2 characters.");
+      return;
+    }
     if (formData.password.length < 6) {
       setError("Password must be at least 6 characters.");
       return;
@@ -294,6 +307,23 @@ const UserManagement = ({ users, setUsers }) => {
       return;
     if (!editData.username || !editData.name || !editData.doj) {
       setEditError("Please fill in all required fields.");
+      return;
+    }
+    const trimmedUsername = editData.username.trim();
+    if (trimmedUsername.length < 3 || trimmedUsername.length > 50) {
+      setEditError("Username must be between 3 and 50 characters.");
+      return;
+    }
+    if (!/^[a-zA-Z0-9._@]+$/.test(trimmedUsername)) {
+      setEditError("Username may only contain letters, digits, dots, underscores, and @.");
+      return;
+    }
+    if (editData.name.trim().length < 2) {
+      setEditError("Full name must be at least 2 characters.");
+      return;
+    }
+    if (editPassword && editPassword.length < 6) {
+      setEditError("Password must be at least 6 characters.");
       return;
     }
     setIsEditing(true);

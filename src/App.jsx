@@ -51,13 +51,37 @@ const App = () => (<QueryClientProvider client={queryClient}>
               </ProtectedRoute>
             }
           />
-          {/* CUSTOM ROUTES */}
-          <Route path="/dashboard" element={<Dashboard />}/>
-          <Route path="/discounts" element={<DiscountsPage />}/>
-          <Route path="/inventory" element={<InventoryPage />}/>
-          <Route path="/products" element={<Products />}/>
-          <Route path="/notifications" element={<NotificationsPage />}/>
-          <Route path="/mails" element={<MailsAdminPage />}/>
+          {/* PROTECTED CUSTOM ROUTES — require login */}
+          <Route path="/dashboard" element={
+            <ProtectedRoute allowedRoles={['ADMIN']}>
+              <Dashboard />
+            </ProtectedRoute>
+          }/>
+          <Route path="/discounts" element={
+            <ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}>
+              <DiscountsPage />
+            </ProtectedRoute>
+          }/>
+          <Route path="/inventory" element={
+            <ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}>
+              <InventoryPage />
+            </ProtectedRoute>
+          }/>
+          <Route path="/products" element={
+            <ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}>
+              <Products />
+            </ProtectedRoute>
+          }/>
+          <Route path="/notifications" element={
+            <ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}>
+              <NotificationsPage />
+            </ProtectedRoute>
+          }/>
+          <Route path="/mails" element={
+            <ProtectedRoute allowedRoles={['ADMIN']}>
+              <MailsAdminPage />
+            </ProtectedRoute>
+          }/>
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />}/>
         </Routes>

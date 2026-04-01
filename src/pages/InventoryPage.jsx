@@ -75,13 +75,24 @@ const InventoryPage = ({ role = "Staff" }) => {
   const validate = () => {
     if (!form.productId) return "Select a product.";
     if (!form.batchNumber.trim()) return "Batch number is required.";
+    if (form.batchNumber.trim().length < 2) return "Batch number must be at least 2 characters.";
 
     const q = Number(form.quantity);
     if (!form.quantity || Number.isNaN(q) || q < 1) {
       return "Quantity must be 1 or more.";
     }
+    if (!Number.isInteger(q)) {
+      return "Quantity must be a whole number.";
+    }
 
     if (!form.expiryDate) return "Expiry date is required.";
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const expiry = new Date(form.expiryDate + "T00:00:00");
+    if (expiry < today) {
+      return "Expiry date must be today or in the future.";
+    }
 
     return "";
   };

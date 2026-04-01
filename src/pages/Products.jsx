@@ -57,13 +57,17 @@ const validate = (form) => {
     errors.push(`Main category must be at least ${MIN_CATEGORY_LENGTH} characters.`);
   }
 
-  // Sub Category (optional but if typed, min length)
-  if (form.subCategory.trim() && form.subCategory.trim().length < MIN_CATEGORY_LENGTH) {
+  // Sub Category (required)
+  if (!form.subCategory.trim()) {
+    errors.push("Sub category is required.");
+  } else if (form.subCategory.trim().length < MIN_CATEGORY_LENGTH) {
     errors.push(`Sub category must be at least ${MIN_CATEGORY_LENGTH} characters.`);
   }
 
-  // Item Type (optional but if typed, min length)
-  if (form.itemType.trim() && form.itemType.trim().length < MIN_CATEGORY_LENGTH) {
+  // Item Type (required)
+  if (!form.itemType.trim()) {
+    errors.push("Item type is required.");
+  } else if (form.itemType.trim().length < MIN_CATEGORY_LENGTH) {
     errors.push(`Item type must be at least ${MIN_CATEGORY_LENGTH} characters.`);
   }
 
@@ -86,8 +90,8 @@ const validate = (form) => {
   const sell = Number(form.sellingPrice);
   if (form.sellingPrice === "" || isNaN(sell)) {
     errors.push("Selling price is required.");
-  } else if (sell < 0) {
-    errors.push("Selling price cannot be negative.");
+  } else if (sell <= 0) {
+    errors.push("Selling price must be greater than 0.");
   } else if (cost > sell) {
     errors.push("Cost price cannot exceed selling price.");
   }
@@ -225,12 +229,19 @@ const Products = () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      if (!res.ok) throw new Error("Save failed");
+      if (!res.ok) {
+        let msg = "Save failed. Please try again.";
+        try {
+          const data = await res.json();
+          msg = data.message || msg;
+        } catch {}
+        throw new Error(msg);
+      }
 
       resetForm();
       loadProducts();
     } catch (err) {
-      setErrors(["Save failed. Please try again."]);
+      setErrors([err.message || "Save failed. Please try again."]);
     }
   };
 

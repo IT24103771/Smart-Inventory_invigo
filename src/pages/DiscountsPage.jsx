@@ -34,7 +34,12 @@ const DiscountsPage = ({ role = "Staff" }) => {
         if (!res.ok) throw new Error("Failed to load products");
 
         const data = await res.json();
-        setProducts(Array.isArray(data) ? data : []);
+        setProducts((Array.isArray(data) ? data : []).map(p => ({
+          ...p,
+          id: p.id ?? p.productId,
+          name: p.name ?? p.productName,
+          category: p.category ?? p.mainCategory,
+        })));
       } catch (e) {
         setError(e.message || "Something went wrong loading products");
       } finally {

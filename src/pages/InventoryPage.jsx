@@ -39,7 +39,12 @@ const InventoryPage = ({ role = "Staff" }) => {
       const pData = await pRes.json();
       const iData = await iRes.json();
 
-      setProducts(Array.isArray(pData) ? pData : []);
+      setProducts((Array.isArray(pData) ? pData : []).map(p => ({
+        ...p,
+        id: p.id ?? p.productId,
+        name: p.name ?? p.productName,
+        category: p.category ?? p.mainCategory,
+      })));
       setRows(Array.isArray(iData) ? iData : []);
     } catch (e) {
       setError("Failed to load inventory/products.");

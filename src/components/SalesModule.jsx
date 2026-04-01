@@ -46,6 +46,9 @@ const parseError = async (response, fallbackMessage) => {
 
 const normalizeProduct = (p) => ({
     ...p,
+    id: p.id ?? p.productId,
+    name: p.name ?? p.productName,
+    category: p.category ?? p.mainCategory,
     displayPrice: toNumber(p?.sellingPrice ?? p?.price ?? 0),
 });
 

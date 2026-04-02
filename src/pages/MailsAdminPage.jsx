@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { authFetch } from "@/lib/api";
 import "../styles/AdminPanel.css";
 
-const API = "http://localhost:8080";
+const API = "/api";
 
 export default function MailsAdminPage({ me }) {
   const adminId = me?.id;
@@ -19,7 +20,7 @@ export default function MailsAdminPage({ me }) {
   });
 
   const fetchUsers = useCallback(async () => {
-    const res = await fetch(`${API}/api/admin/users`);
+    const res = await authFetch(`${API}/admin/users`);
     if (!res.ok) throw new Error(await res.text());
     const data = await res.json();
     return Array.isArray(data) ? data : [];
@@ -27,10 +28,10 @@ export default function MailsAdminPage({ me }) {
 
   const fetchSent = useCallback(async () => {
     if (!adminId) return [];
-    const url = `${API}/api/mails/sent/${adminId}`;
+    const url = `${API}/mails/sent/${adminId}`;
     console.log("📩 Fetching sent from:", url);
 
-    const res = await fetch(url);
+    const res = await authFetch(url);
     if (!res.ok) throw new Error(await res.text());
     const data = await res.json();
     return Array.isArray(data) ? data : [];
@@ -91,9 +92,8 @@ export default function MailsAdminPage({ me }) {
         body: form.body.trim(),
       };
 
-      const res = await fetch(`${API}/api/admin/mails`, {
+      const res = await authFetch(`${API}/admin/mails`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 

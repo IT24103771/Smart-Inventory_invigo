@@ -2,9 +2,10 @@ import React, { useEffect, useMemo, useState } from "react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { getCurrentUser } from "@/lib/auth";
+import { authFetch } from "@/lib/api";
 import "../styles/Dashboard.css";
 
-const API = "http://localhost:8080";
+const API = "/api";
 
 const Dashboard = () => {
   const [summary, setSummary] = useState(null);
@@ -24,9 +25,9 @@ const Dashboard = () => {
       setError("");
 
       const [sumRes, iRes, sRes] = await Promise.all([
-        fetch(`${API}/api/dashboard/summary`),
-        fetch(`${API}/api/inventory`),
-        fetch(`${API}/api/sales`),
+        authFetch(`${API}/dashboard/summary`),
+        authFetch(`${API}/inventory`),
+        authFetch(`${API}/sales`),
       ]);
 
       if (!sumRes.ok) throw new Error("Dashboard summary fetch failed");

@@ -1,1011 +1,896 @@
-import { useEffect, useMemo, useState } from "react";
-import { motion } from "framer-motion";
-import {
-    ShoppingCart,
-    Clock,
-    Edit2,
-    Trash2,
-    Plus,
-    CheckCircle2,
-} from "lucide-react";
-
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/use-toast";
+import {
+    Plus, Trash2, Edit2, ShoppingCart, FileText, X, CheckCircle, Ban,
+    Download, Eye, Search, Filter, RefreshCw,
+} from "lucide-react";
 
-const API_BASE_URL = "http://localhost:8080/api";
+import {
+    getProducts,
+    getBatchesByProduct,
+    getDiscountLookup,
+    getSales,
+    createSale,
+    updateSale,
+    deleteSale,
+    getBills,
+    getBill,
+    createBill,
+    updateDraft,
+    finalizeBill as finalizeBillApi,
+    voidBill as voidBillApi,
+    deleteDraft,
+    getReceiptPdf,
+} from "@/lib/salesApi";
 
 const todayStr = () => new Date().toISOString().split("T")[0];
+const money = (v) => `Rs ${(Number(v) || 0).toFixed(2)}`;
+const uid = () => `item_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-const toNumber = (value, fallback = 0) => {
-    const n = Number(value);
-    return Number.isFinite(n) ? n : fallback;
+const STATUS_COLORS = {
+    DRAFT: "bg-blue-100 text-blue-800 border-blue-300",
+    FINALIZED: "bg-emerald-100 text-emerald-800 border-emerald-300",
+    VOIDED: "bg-red-100 text-red-800 border-red-300",
 };
-
-const money = (value) => `Rs ${toNumber(value).toFixed(2)}`;
-
-const parseError = async (response, fallbackMessage) => {
-    try {
-        const data = await response.json();
-        return data.message || data.error || fallbackMessage;
-    } catch {
-        try {
-            const text = await response.text();
-            return text || fallbackMessage;
-        } catch {
-            return fallbackMessage;
-        }
-    }
-};
-
-const normalizeProduct = (p) => ({
-    ...p,
-    id: p.id ?? p.productId,
-    name: p.name ?? p.productName,
-    category: p.category ?? p.mainCategory,
-    displayPrice: toNumber(p?.sellingPrice ?? p?.price ?? 0),
-});
-
-const normalizeSale = (sale, productsMap) => {
-    const product = productsMap.get(String(sale.productId)) || null;
-    const unitPrice = toNumber(
-        sale.unitPrice ??
-        sale.sellingPrice ??
-        sale.price ??
-        product?.sellingPrice ??
-        product?.price ??
-        0
-    );
-
-    const quantitySold = toNumber(sale.quantitySold ?? sale.quantity ?? 0);
-    const lineTotal = toNumber(sale.lineTotal ?? unitPrice * quantitySold);
-    const saleDate = sale.saleDate ?? sale.date ?? "";
-    const productName =
-        sale.productName ??
-        product?.name ??
-        `Product #${sale.productId ?? sale.id ?? ""}`;
-
-    return {
-        ...sale,
-        productName,
-        quantitySold,
-        unitPrice,
-        lineTotal,
-        saleDate,
-        recordedBy: sale.recordedBy ?? sale.createdBy ?? "System",
-        saleGroupId: sale.saleGroupId ?? String(sale.id),
-        status: sale.status ?? "ACTIVE",
-    };
-};
-
-const createEmptyItem = () => ({
-    id: crypto.randomUUID?.() || String(Date.now() + Math.random()),
-    productId: "",
-    batchId: "",
-    quantity: "",
-});
 
 export default function SalesModule({ role }) {
+    const isAdmin = role === "Admin";
+    const isStaff = role === "Staff";
     const { toast } = useToast();
 
-    const [products, setProducts] = useState([]);
-    const [sales, setSales] = useState([]);
+    // ── Theme
+    const textValue = isStaff ? "text-[#3E2723]" : "text-[#0F172A]";
+    const textLabel = isStaff ? "text-[#4E342E]/60" : "text-[#334155]";
+    const inputBg = isStaff ? "bg-[#EFEBE9] border-[#4E342E]/10" : "";
+    const cardBg = isStaff ? "bg-[#FFF8F0] border-[#4E342E]/10" : "";
 
-    const [items, setItems] = useState([createEmptyItem()]);
+    // ── Data
+    const [products, setProducts] = useState([]);
+    const [batchesByProduct, setBatchesByProduct] = useState({});
+
+    // ── History data - works with EITHER bills API or legacy sales API
+    const [historyItems, setHistoryItems] = useState([]);  // normalized rows
+    const [useBillsApi, setUseBillsApi] = useState(true);  // whether new API is available
+
+    // ── Form state
+    const [tab, setTab] = useState("record"); // record | history
     const [saleDate, setSaleDate] = useState(todayStr());
     const [notes, setNotes] = useState("");
+    const [items, setItems] = useState([{ id: uid(), productId: "", batchId: "", quantity: "", discountPercent: 0, discountNote: "" }]);
+    const [editingBillId, setEditingBillId] = useState(null);
+    const [editingLegacySaleId, setEditingLegacySaleId] = useState(null);
+    const [submitting, setSubmitting] = useState(false);
+    const idempotencyRef = useRef(uid());
 
-    const [batchesByProduct, setBatchesByProduct] = useState({});
-    const [loadingBatches, setLoadingBatches] = useState({});
+    // ── History filters
+    const [statusFilter, setStatusFilter] = useState("");
+    const [searchTerm, setSearchTerm] = useState("");
 
-    const [editOpen, setEditOpen] = useState(false);
-    const [editData, setEditData] = useState(null);
+    // ── Dialogs
+    const [billDetailOpen, setBillDetailOpen] = useState(false);
+    const [selectedBill, setSelectedBill] = useState(null);
+    const [voidDialogOpen, setVoidDialogOpen] = useState(false);
+    const [voidBillId, setVoidBillId] = useState(null);
+    const [voidReason, setVoidReason] = useState("");
+    const [voiding, setVoiding] = useState(false);
 
-    const [billOpen, setBillOpen] = useState(false);
-    const [selectedBillId, setSelectedBillId] = useState(null);
+    // ── Loading
+    const [loading, setLoading] = useState(true);
 
-    const [filterSearch, setFilterSearch] = useState("");
-    const [filterStatus, setFilterStatus] = useState("ALL");
-    const [filterDate, setFilterDate] = useState("");
-    const [sortBy, setSortBy] = useState("NEWEST");
+    // ── Convert legacy sale to normalized bill-like row ──────────────────────────
 
-    const productsMap = useMemo(
-        () => new Map(products.map((p) => [String(p.id), p])),
-        [products]
-    );
-
-    const fetchProducts = async () => {
-        const response = await fetch(`${API_BASE_URL}/products`);
-        if (!response.ok) {
-            throw new Error(await parseError(response, "Failed to fetch products"));
-        }
-        const data = await response.json();
-        return (Array.isArray(data) ? data : []).map(normalizeProduct);
-    };
-
-    const fetchSales = async (currentProducts) => {
-        const response = await fetch(`${API_BASE_URL}/sales`);
-        if (!response.ok) {
-            throw new Error(await parseError(response, "Failed to fetch sales history"));
-        }
-        const salesData = await response.json();
-        const currentProductsMap = new Map(currentProducts.map((p) => [String(p.id), p]));
-        return (Array.isArray(salesData) ? salesData : []).map((s) => normalizeSale(s, currentProductsMap));
-    };
-
-    const fetchBatchesByProduct = async (productId) => {
-        if (!productId) return [];
-        const response = await fetch(`${API_BASE_URL}/inventory/by-product/${productId}`);
-        if (!response.ok) {
-            throw new Error(await parseError(response, "Failed to fetch batches"));
-        }
-        const data = await response.json();
-        return Array.isArray(data) ? data : [];
-    };
-
-    const refreshData = async () => {
-        try {
-            const fetchedProducts = await fetchProducts();
-            setProducts(fetchedProducts);
-
-            const fetchedSales = await fetchSales(fetchedProducts);
-            setSales(fetchedSales);
-        } catch (error) {
-            toast({
-                title: "Error loading data",
-                description: error?.message || "Failed to load sales data",
-                variant: "destructive",
-            });
-        }
-    };
-
-    useEffect(() => {
-        refreshData();
-    }, []);
-
-    const ensureBatchesLoaded = async (productId) => {
-        if (!productId) return [];
-        const key = String(productId);
-
-        if (batchesByProduct[key]) {
-            return batchesByProduct[key];
-        }
-
-        try {
-            setLoadingBatches((prev) => ({ ...prev, [key]: true }));
-            const batches = await fetchBatchesByProduct(productId);
-
-            setBatchesByProduct((prev) => ({
-                ...prev,
-                [key]: batches,
-            }));
-
-            return batches;
-        } catch {
-            setBatchesByProduct((prev) => ({
-                ...prev,
-                [key]: [],
-            }));
-            return [];
-        } finally {
-            setLoadingBatches((prev) => ({ ...prev, [key]: false }));
-        }
-    };
-
-    const getProductById = (productId) => productsMap.get(String(productId)) || null;
-
-    const getBatchesForProduct = (productId) => {
-        if (!productId) return [];
-        return batchesByProduct[String(productId)] || [];
-    };
-
-    const getBatchForItem = (item) => {
-        const batches = getBatchesForProduct(item.productId);
-        return batches.find((b) => String(b.id) === String(item.batchId)) || null;
-    };
-
-    const todaySales = useMemo(
-        () => sales.filter((s) => s.saleDate === todayStr()),
-        [sales]
-    );
-
-    const todayCount = todaySales.length;
-    const todayQuantity = todaySales.reduce((acc, curr) => acc + toNumber(curr.quantitySold), 0);
-
-    const displaySales = useMemo(() => {
-        const filtered = [...sales].filter((s) => {
-            const matchesSearch =
-                !filterSearch ||
-                String(s.productName).toLowerCase().includes(filterSearch.toLowerCase()) ||
-                String(s.saleGroupId).toLowerCase().includes(filterSearch.toLowerCase()) ||
-                String(s.recordedBy).toLowerCase().includes(filterSearch.toLowerCase()) ||
-                String(s.batchNumber ?? "").toLowerCase().includes(filterSearch.toLowerCase());
-
-            const matchesStatus = filterStatus === "ALL" || s.status === filterStatus;
-            const matchesDate = !filterDate || s.saleDate === filterDate;
-
-            return matchesSearch && matchesStatus && matchesDate;
-        });
-
-        filtered.sort((a, b) => {
-            if (sortBy === "OLDEST") return new Date(a.saleDate || 0) - new Date(b.saleDate || 0);
-            if (sortBy === "QTY_HIGH") return toNumber(b.quantitySold) - toNumber(a.quantitySold);
-            if (sortBy === "QTY_LOW") return toNumber(a.quantitySold) - toNumber(b.quantitySold);
-            return new Date(b.saleDate || 0) - new Date(a.saleDate || 0);
-        });
-
-        return filtered;
-    }, [sales, filterSearch, filterStatus, filterDate, sortBy]);
-
-    const selectedBillLines = useMemo(() => {
-        if (!selectedBillId) return [];
-        return sales.filter((s) => String(s.saleGroupId ?? s.id) === String(selectedBillId));
-    }, [sales, selectedBillId]);
-
-    const selectedBillTotal = selectedBillLines.reduce((sum, s) => sum + toNumber(s.lineTotal), 0);
-
-    const lineTotals = items.map((item) => {
-        const product = getProductById(item.productId);
-        const qty = toNumber(item.quantity, 0);
-        const unitPrice = toNumber(product?.displayPrice ?? product?.price ?? 0);
-        return unitPrice * qty;
+    const legacySaleToBillRow = (sale) => ({
+        id: sale.id,
+        billNumber: sale.billNumber || `SALE-${sale.id}`,
+        saleDate: sale.saleDate,
+        status: sale.status || "FINALIZED",
+        billTotal: sale.totalAmount || 0,
+        createdBy: sale.createdBy || "-",
+        createdAt: sale.createdAt,
+        isLegacy: true,
+        lines: [{
+            id: sale.id,
+            productId: sale.productId,
+            productName: sale.productName,
+            batchId: sale.batchId,
+            batchNumber: sale.batchNumber,
+            expiryDate: sale.expiryDate,
+            quantity: sale.quantity,
+            originalUnitPrice: sale.originalUnitPrice,
+            discountPercent: sale.discountPercent,
+            discountedUnitPrice: sale.discountedUnitPrice,
+            totalAmount: sale.totalAmount,
+            discountNote: sale.discountNote,
+        }],
     });
 
-    const grandTotal = lineTotals.reduce((sum, value) => sum + value, 0);
+    const billToBillRow = (bill) => ({
+        id: bill.id,
+        billNumber: bill.billNumber,
+        saleDate: bill.saleDate,
+        status: bill.status,
+        billTotal: bill.billTotal || 0,
+        createdBy: bill.createdBy || "-",
+        createdAt: bill.createdAt,
+        finalizedAt: bill.finalizedAt,
+        finalizedBy: bill.finalizedBy,
+        voidedAt: bill.voidedAt,
+        voidedBy: bill.voidedBy,
+        voidReason: bill.voidReason,
+        notes: bill.notes,
+        isLegacy: false,
+        lines: bill.lines || [],
+    });
 
-    const resetForm = () => {
-        setItems([createEmptyItem()]);
-        setSaleDate(todayStr());
-        setNotes("");
-    };
+    // ── Fetch data ──────────────────────────────────────────────────────────────
 
-    const addLine = () => {
-        setItems((prev) => [...prev, createEmptyItem()]);
-    };
+    const fetchAll = useCallback(async () => {
+        try {
+            setLoading(true);
 
-    const openBillDetails = (billId) => {
-        setSelectedBillId(String(billId));
-        setBillOpen(true);
-    };
+            // Always fetch products
+            try {
+                const prods = await getProducts();
+                setProducts(Array.isArray(prods) ? prods : []);
+            } catch (err) {
+                toast({ title: "Error", description: err.message || "Failed to fetch products", variant: "destructive" });
+            }
 
-    const openEdit = async (sale) => {
-        if (sale.productId) {
-            await ensureBatchesLoaded(sale.productId);
+            // Try bills API first, fall back to legacy sales API
+            let gotBills = false;
+            try {
+                const billsData = await getBills(statusFilter || undefined);
+                if (Array.isArray(billsData)) {
+                    setHistoryItems(billsData.map(billToBillRow));
+                    setUseBillsApi(true);
+                    gotBills = true;
+                }
+            } catch {
+                // Bills API not available
+            }
+
+            if (!gotBills) {
+                // Fall back to legacy sales
+                try {
+                    const salesData = await getSales();
+                    if (Array.isArray(salesData)) {
+                        let rows = salesData.map(legacySaleToBillRow);
+                        // Apply status filter for legacy sales
+                        if (statusFilter) {
+                            rows = rows.filter((r) => r.status === statusFilter);
+                        }
+                        setHistoryItems(rows);
+                    } else {
+                        setHistoryItems([]);
+                    }
+                    setUseBillsApi(false);
+                } catch {
+                    setHistoryItems([]);
+                    setUseBillsApi(false);
+                }
+            }
+        } finally {
+            setLoading(false);
         }
+    }, [statusFilter, toast]);
 
-        setEditData({
-            id: sale.id,
-            productId: String(sale.productId ?? ""),
-            batchId: String(sale.batchId ?? ""),
-            quantitySold: String(sale.quantitySold ?? sale.quantity ?? ""),
-            saleDate: sale.saleDate ?? todayStr(),
-        });
-        setEditOpen(true);
+    useEffect(() => { fetchAll(); }, [fetchAll]);
+
+    const ensureBatchesLoaded = async (productId) => {
+        if (!productId || batchesByProduct[productId]) return;
+        try {
+            const data = await getBatchesByProduct(productId);
+            setBatchesByProduct((prev) => ({ ...prev, [productId]: Array.isArray(data) ? data : [] }));
+        } catch { /* ignore */ }
+    };
+
+    // ── Line item handlers ──────────────────────────────────────────────────────
+
+    const addItem = () => setItems((prev) => [...prev, { id: uid(), productId: "", batchId: "", quantity: "", discountPercent: 0, discountNote: "" }]);
+
+    const removeItem = (itemId) => {
+        if (items.length <= 1) return;
+        setItems((prev) => prev.filter((i) => i.id !== itemId));
     };
 
     const handleProductChange = async (itemId, productId) => {
-        setItems((prev) =>
-            prev.map((i) =>
-                i.id === itemId
-                    ? { ...i, productId, batchId: "", quantity: "" }
-                    : i
-            )
-        );
+        await ensureBatchesLoaded(productId);
+        setItems((prev) => prev.map((i) => i.id === itemId ? { ...i, productId, batchId: "", quantity: "", discountPercent: 0, discountNote: "" } : i));
+    };
 
-        if (productId) {
-            await ensureBatchesLoaded(productId);
+    const handleBatchChange = async (itemId, productId, batchId) => {
+        setItems((prev) => prev.map((i) => i.id === itemId ? { ...i, batchId, quantity: "", discountPercent: 0, discountNote: "" } : i));
+        if (productId && batchId) {
+            try {
+                const data = await getDiscountLookup(productId, batchId);
+                setItems((prev) => prev.map((i) => i.id === itemId ? { ...i, discountPercent: Number(data.discountPercent || 0), discountNote: data.note || "" } : i));
+            } catch { /* ignore */ }
         }
     };
 
-    const handleBatchChange = (itemId, batchId) => {
-        setItems((prev) =>
-            prev.map((i) =>
-                i.id === itemId
-                    ? { ...i, batchId, quantity: "" }
-                    : i
-            )
-        );
+    const handleQtyChange = (itemId, value) => {
+        setItems((prev) => prev.map((i) => i.id === itemId ? { ...i, quantity: value } : i));
     };
 
-    const handleQuantityChange = (itemId, quantity) => {
-        setItems((prev) =>
-            prev.map((i) =>
-                i.id === itemId
-                    ? { ...i, quantity }
-                    : i
-            )
-        );
-    };
+    // ── Validation ──────────────────────────────────────────────────────────────
 
-    const validateItems = () => {
-        // Validate sale date before line items
-        if (!saleDate) {
-            throw new Error("Sale date is required.");
-        }
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const saleDateObj = new Date(saleDate + "T00:00:00");
-        if (saleDateObj > today) {
-            throw new Error("Sale date cannot be in the future.");
-        }
+    const validateForm = () => {
+        if (!saleDate) throw new Error("Sale date is required.");
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        if (new Date(`${saleDate}T00:00:00`) > today) throw new Error("Sale date cannot be in the future.");
 
-        const cleanedItems = items.map((item) => {
-            const batch = getBatchForItem(item);
-            return {
-                ...item,
-                quantity: toNumber(item.quantity, 0),
-                batch,
-            };
-        });
+        const validItems = items.filter((i) => i.productId || i.batchId || i.quantity);
+        if (validItems.length === 0) throw new Error("Add at least one line item.");
 
-        for (const item of cleanedItems) {
-            if (!item.productId) {
-                throw new Error("Please select a product for every line.");
-            }
-            if (!item.batchId) {
-                throw new Error("Please select a batch for every line.");
-            }
-            if (!item.quantity || item.quantity <= 0) {
-                throw new Error("Quantity must be at least 1.");
-            }
-            if (!Number.isInteger(item.quantity)) {
-                throw new Error("Quantity must be a whole number.");
-            }
+        for (const item of validItems) {
+            if (!item.productId) throw new Error("Please select a product for every line.");
+            if (!item.batchId) throw new Error("Please select a batch for every line.");
+            const qty = Number(item.quantity);
+            if (!qty || qty < 1) throw new Error("Quantity must be at least 1.");
+            if (!Number.isInteger(qty)) throw new Error("Quantity must be a whole number.");
 
-            const batchQty = toNumber(item.batch?.quantity, 0);
-            if (item.quantity > batchQty) {
-                throw new Error(`Not enough stock in selected batch. Available: ${batchQty}`);
-            }
-
-            if (item.batch?.status === "Expired") {
-                throw new Error("Cannot sell an expired batch.");
-            }
-
-            if (item.batch?.expiryDate && item.saleDate) {
-                const exp = new Date(item.batch.expiryDate);
-                const saleDt = new Date(saleDate);
-                if (exp < new Date(saleDt.toISOString().slice(0, 10))) {
+            const batch = (batchesByProduct[item.productId] || []).find((b) => String(b.id) === String(item.batchId));
+            if (batch) {
+                if (qty > (batch.quantity || 0)) throw new Error(`Not enough stock. Available: ${batch.quantity}`);
+                if (batch.expiryDate && new Date(`${batch.expiryDate}T00:00:00`) < new Date(`${saleDate}T00:00:00`))
                     throw new Error("Cannot sell from an expired batch.");
-                }
             }
         }
 
-        return cleanedItems.filter((item) => item.productId && item.batchId && item.quantity > 0);
+        return validItems;
     };
 
-    const handleRecordSale = async (e) => {
-        e.preventDefault();
+    // ── Form submit ─────────────────────────────────────────────────────────────
 
-        let cleanedItems;
-        try {
-            cleanedItems = validateItems();
-        } catch (error) {
-            toast({
-                title: "Failed to record sale",
-                description: error?.message || "Please check the form.",
-                variant: "destructive",
-            });
+    const resetForm = () => {
+        setItems([{ id: uid(), productId: "", batchId: "", quantity: "", discountPercent: 0, discountNote: "" }]);
+        setSaleDate(todayStr());
+        setNotes("");
+        setEditingBillId(null);
+        setEditingLegacySaleId(null);
+        idempotencyRef.current = uid();
+    };
+
+    const handleSaveDraft = async () => {
+        let validItems;
+        try { validItems = validateForm(); } catch (err) {
+            toast({ title: "Validation", description: err.message, variant: "destructive" }); return;
+        }
+        if (!useBillsApi) {
+            toast({ title: "Not Available", description: "Save Draft requires the new backend. Please rebuild your backend first.", variant: "destructive" });
             return;
         }
-
-        if (cleanedItems.length === 0) {
-            toast({
-                title: "No items",
-                description: "Add at least one valid product, batch, and quantity.",
-                variant: "destructive",
-            });
-            return;
-        }
-
+        setSubmitting(true);
         try {
-            for (const item of cleanedItems) {
+            const payload = {
+                saleDate,
+                notes: notes || null,
+                idempotencyKey: idempotencyRef.current,
+                finalize: false,
+                lines: validItems.map((i) => ({
+                    productId: Number(i.productId),
+                    batchId: Number(i.batchId),
+                    quantity: Number(i.quantity),
+                })),
+            };
+            if (editingBillId) {
+                await updateDraft(editingBillId, payload);
+                toast({ title: "Draft updated" });
+            } else {
+                await createBill(payload);
+                toast({ title: "Draft saved" });
+            }
+            resetForm();
+            await fetchAll();
+        } catch (err) {
+            toast({ title: "Error", description: err.message, variant: "destructive" });
+        } finally { setSubmitting(false); }
+    };
+
+    const handleFinalize = async () => {
+        let validItems;
+        try { validItems = validateForm(); } catch (err) {
+            toast({ title: "Validation", description: err.message, variant: "destructive" }); return;
+        }
+        setSubmitting(true);
+        try {
+            if (editingBillId && useBillsApi) {
+                // Update and finalize existing draft via bill API
                 const payload = {
+                    saleDate, notes: notes || null, finalize: false,
+                    lines: validItems.map((i) => ({ productId: Number(i.productId), batchId: Number(i.batchId), quantity: Number(i.quantity) })),
+                };
+                await updateDraft(editingBillId, payload);
+                await finalizeBillApi(editingBillId);
+            } else if (editingLegacySaleId) {
+                // Editing a legacy sale — use legacy update
+                const item = validItems[0];
+                await updateSale(editingLegacySaleId, {
                     productId: Number(item.productId),
                     batchId: Number(item.batchId),
                     quantity: Number(item.quantity),
                     saleDate,
-                };
-
-                const response = await fetch(`${API_BASE_URL}/sales`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(payload),
                 });
-
-                if (!response.ok) {
-                    throw new Error(await parseError(response, "Could not save sale."));
+            } else {
+                // New sale — try bills API first, fall back to legacy
+                let success = false;
+                if (useBillsApi) {
+                    try {
+                        const payload = {
+                            saleDate, notes: notes || null,
+                            idempotencyKey: idempotencyRef.current,
+                            finalize: true,
+                            lines: validItems.map((i) => ({ productId: Number(i.productId), batchId: Number(i.batchId), quantity: Number(i.quantity) })),
+                        };
+                        await createBill(payload);
+                        success = true;
+                    } catch { /* fall through to legacy */ }
+                }
+                if (!success) {
+                    // Legacy: create one sale per line item
+                    for (const item of validItems) {
+                        await createSale({
+                            productId: Number(item.productId),
+                            batchId: Number(item.batchId),
+                            quantity: Number(item.quantity),
+                            saleDate,
+                        });
+                    }
                 }
             }
-
-            toast({
-                title: "Sale recorded",
-                description: "The sale was saved successfully.",
-            });
-
+            toast({ title: "Sale finalized", description: "Stock has been deducted." });
             resetForm();
-            await refreshData();
-        } catch (error) {
-            toast({
-                title: "Failed to record sale",
-                description: error?.message || "Could not save sale.",
-                variant: "destructive",
-            });
+            await fetchAll();
+        } catch (err) {
+            toast({ title: "Finalization failed", description: err.message, variant: "destructive" });
+        } finally { setSubmitting(false); }
+    };
+
+    // ── Edit (works with both legacy sales and bills) ───────────────────────────
+
+    const openEdit = async (row) => {
+        if (row.isLegacy) {
+            // Legacy sale — load single line into form
+            const line = row.lines[0];
+            if (line?.productId) await ensureBatchesLoaded(String(line.productId));
+            setItems([{
+                id: uid(),
+                productId: String(line?.productId || ""),
+                batchId: String(line?.batchId || ""),
+                quantity: String(line?.quantity || ""),
+                discountPercent: line?.discountPercent || 0,
+                discountNote: line?.discountNote || "",
+            }]);
+            setSaleDate(row.saleDate || todayStr());
+            setNotes("");
+            setEditingLegacySaleId(row.id);
+            setEditingBillId(null);
+            setTab("record");
+        } else {
+            // New bill — load from bills API
+            try {
+                const detail = await getBill(row.id);
+                for (const line of detail.lines || []) {
+                    await ensureBatchesLoaded(String(line.productId));
+                }
+                setItems(
+                    (detail.lines || []).map((l) => ({
+                        id: uid(),
+                        productId: String(l.productId),
+                        batchId: String(l.batchId),
+                        quantity: String(l.quantity),
+                        discountPercent: l.discountPercent || 0,
+                        discountNote: l.discountNote || "",
+                    }))
+                );
+                setSaleDate(detail.saleDate || todayStr());
+                setNotes(detail.notes || "");
+                setEditingBillId(detail.id);
+                setEditingLegacySaleId(null);
+                setTab("record");
+            } catch (err) {
+                toast({ title: "Error", description: err.message, variant: "destructive" });
+            }
         }
     };
 
-    const handleVoidSale = async (saleId) => {
+    // ── Finalize existing draft (bills API only) ────────────────────────────────
+
+    const handleFinalizeDraft = async (billId) => {
+        setSubmitting(true);
         try {
-            const response = await fetch(`${API_BASE_URL}/sales/${saleId}`, {
-                method: "DELETE",
-            });
-
-            if (!response.ok) {
-                throw new Error(await parseError(response, "Could not delete sale."));
-            }
-
-            toast({
-                title: "Sale removed",
-                description: "The sale was deleted successfully.",
-            });
-
-            await refreshData();
-        } catch (error) {
-            toast({
-                title: "Failed to remove sale",
-                description: error?.message || "Could not delete sale.",
-                variant: "destructive",
-            });
-        }
+            await finalizeBillApi(billId);
+            toast({ title: "Bill finalized", description: "Stock has been deducted." });
+            await fetchAll();
+        } catch (err) {
+            toast({ title: "Finalization failed", description: err.message, variant: "destructive" });
+        } finally { setSubmitting(false); }
     };
 
-    const handleEditSale = async () => {
-        if (!editData?.id) return;
+    // ── Delete (works with both legacy sales and bills) ─────────────────────────
 
+    const handleDelete = async (row) => {
         try {
-            const payload = {
-                productId: Number(editData.productId),
-                batchId: Number(editData.batchId),
-                quantity: Number(editData.quantitySold),
-                saleDate: editData.saleDate,
-            };
-
-            if (!payload.productId || !payload.batchId || !payload.quantity || !payload.saleDate) {
-                throw new Error("Product, batch, quantity, and sale date are required.");
+            if (row.isLegacy) {
+                await deleteSale(row.id);
+            } else {
+                await deleteDraft(row.id);
             }
-
-            const response = await fetch(`${API_BASE_URL}/sales/${editData.id}`, {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(payload),
-            });
-
-            if (!response.ok) {
-                throw new Error(await parseError(response, "Could not update sale."));
-            }
-
-            toast({
-                title: "Sale updated",
-                description: "The quantity was updated successfully.",
-            });
-
-            setEditOpen(false);
-            setEditData(null);
-            await refreshData();
-        } catch (error) {
-            toast({
-                title: "Failed to update sale",
-                description: error?.message || "Could not update sale.",
-                variant: "destructive",
-            });
+            toast({ title: row.isLegacy ? "Sale deleted" : "Draft deleted" });
+            if (editingBillId === row.id || editingLegacySaleId === row.id) resetForm();
+            await fetchAll();
+        } catch (err) {
+            toast({ title: "Error", description: err.message, variant: "destructive" });
         }
     };
 
-    const isDark = false;
-    const isStaff = role === "Staff";
-    const isAdmin = role === "Admin";
+    // ── Void bill (bills API only) ──────────────────────────────────────────────
 
-    const bgCard = isStaff
-        ? "card-premium border-none shadow-[0_8px_30px_rgb(78,52,46,0.04)] bg-[#F9F5EC]"
-        : "card-premium border-none shadow-premium bg-white";
-    const textLabel = isStaff ? "text-[#4E342E]/50" : "text-[#0F172A]/40";
-    const textValue = isStaff ? "text-[#4E342E]" : "text-[#0F172A]";
-    const inputBg = isStaff
-        ? "bg-[#F5EBE1] border-[#4E342E]/10 placeholder:text-[#4E342E]/30"
-        : "bg-white border-gray-200 placeholder:text-[#0F172A]/30";
+    const openVoidDialog = (billId) => {
+        setVoidBillId(billId);
+        setVoidReason("");
+        setVoidDialogOpen(true);
+    };
+
+    const handleVoid = async () => {
+        if (!voidReason || voidReason.trim().length < 5) {
+            toast({ title: "Validation", description: "Void reason must be at least 5 characters.", variant: "destructive" }); return;
+        }
+        setVoiding(true);
+        try {
+            await voidBillApi(voidBillId, voidReason.trim());
+            toast({ title: "Bill voided", description: "Stock has been restored." });
+            setVoidDialogOpen(false);
+            await fetchAll();
+        } catch (err) {
+            toast({ title: "Void failed", description: err.message, variant: "destructive" });
+        } finally { setVoiding(false); }
+    };
+
+    // ── View detail ─────────────────────────────────────────────────────────────
+
+    const openDetail = (row) => {
+        setSelectedBill(row);
+        setBillDetailOpen(true);
+    };
+
+    // ── Download PDF (bills API only) ───────────────────────────────────────────
+
+    const handleDownloadPdf = async (billId, billNumber) => {
+        try {
+            const blob = await getReceiptPdf(billId);
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `receipt-${billNumber}.pdf`;
+            a.click();
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            toast({ title: "PDF failed", description: err.message, variant: "destructive" });
+        }
+    };
+
+    // ── Filtered rows ───────────────────────────────────────────────────────────
+
+    const filteredRows = historyItems.filter((r) => {
+        if (searchTerm) {
+            const s = searchTerm.toLowerCase();
+            const matchBill = r.billNumber?.toLowerCase().includes(s);
+            const matchProduct = r.lines?.some((l) => l.productName?.toLowerCase().includes(s));
+            const matchDate = r.saleDate?.includes(s);
+            if (!matchBill && !matchProduct && !matchDate) return false;
+        }
+        return true;
+    });
+
+    // ── Get product display price from item ─────────────────────────────────────
+
+    const getItemPrice = (item) => {
+        const prod = products.find((p) => String(p.productId ?? p.id) === String(item.productId));
+        if (!prod) return 0;
+        const unitPrice = prod.sellingPrice || prod.displayPrice || 0;
+        const disc = Number(item.discountPercent || 0);
+        return unitPrice * (1 - disc / 100);
+    };
+
+    const getItemTotal = (item) => {
+        const qty = Number(item.quantity) || 0;
+        return getItemPrice(item) * qty;
+    };
+
+    const billFormTotal = items.reduce((sum, item) => sum + getItemTotal(item), 0);
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // RENDER
+    // ═══════════════════════════════════════════════════════════════════════════
 
     return (
-        <div className="space-y-10">
-            <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className={`${bgCard} p-6 rounded-[2rem]`}>
-                    <div className="flex justify-between items-start mb-4">
-                        <div className="p-3 rounded-2xl bg-[#007A5E]/10 text-[#007A5E]">
-                            <ShoppingCart size={24} />
-                        </div>
-                    </div>
-                    <p className={`text-xs font-black uppercase tracking-widest ${textLabel} mb-1`}>Today's Transactions</p>
-                    <h3 className={`text-4xl font-black ${textValue}`}>{todayCount}</h3>
-                </motion.div>
-
-                <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className={`${bgCard} p-6 rounded-[2rem]`}>
-                    <div className="flex justify-between items-start mb-4">
-                        <div className="p-3 rounded-2xl bg-[#7C3AED]/10 text-[#7C3AED]">
-                            <Clock size={24} />
-                        </div>
-                    </div>
-                    <p className={`text-xs font-black uppercase tracking-widest ${textLabel} mb-1`}>Units Sold Today</p>
-                    <h3 className={`text-4xl font-black ${textValue}`}>{todayQuantity}</h3>
-                </motion.div>
-
-                <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className={`${bgCard} p-6 rounded-[2rem]`}>
-                    <div className="flex justify-between items-start mb-4">
-                        <div className="p-3 rounded-2xl bg-[#F59E0B]/10 text-[#F59E0B]">
-                            <CheckCircle2 size={24} />
-                        </div>
-                    </div>
-                    <p className={`text-xs font-black uppercase tracking-widest ${textLabel} mb-1`}>Today Revenue</p>
-                    <h3 className={`text-4xl font-black ${textValue}`}>
-                        {money(todaySales.reduce((sum, s) => sum + toNumber(s.lineTotal), 0))}
-                    </h3>
-                </motion.div>
+        <div className="space-y-6">
+            {/* ─── Tab Bar ─────────────────────────────────────────────────── */}
+            <div className="flex items-center gap-2">
+                <Button variant={tab === "record" ? "default" : "ghost"} onClick={() => setTab("record")} className="rounded-2xl gap-2">
+                    <ShoppingCart className="h-4 w-4" /> {editingBillId || editingLegacySaleId ? "Edit Sale" : "New Sale"}
+                </Button>
+                <Button variant={tab === "history" ? "default" : "ghost"} onClick={() => setTab("history")} className="rounded-2xl gap-2">
+                    <FileText className="h-4 w-4" /> Sales History
+                </Button>
+                {(editingBillId || editingLegacySaleId) && (
+                    <Button variant="ghost" size="sm" onClick={resetForm} className="ml-auto gap-1 text-orange-600">
+                        <X className="h-3 w-3" /> Cancel Edit
+                    </Button>
+                )}
             </div>
 
-            <div className="grid lg:grid-cols-3 gap-8">
-                <div className="lg:col-span-1 space-y-4">
-                    <Card className={`${bgCard} p-0 overflow-hidden`}>
-                        <CardHeader className={`p-6 border-b ${isDark ? "border-white/5" : "border-[#0F172A]/5"}`}>
-                            <CardTitle className={`font-black text-xl ${textValue}`}>Record New Sale</CardTitle>
-                            <CardDescription className="font-bold">
-                                Add one or more product lines with batch selection.
-                            </CardDescription>
-                        </CardHeader>
-
-                        <CardContent className="p-6 space-y-4">
-                            <form onSubmit={handleRecordSale} className="space-y-4">
-                                <div className="space-y-3">
-                                    {items.map((item, index) => {
-                                        const product = getProductById(item.productId);
-                                        const batches = getBatchesForProduct(item.productId);
-                                        const selectedBatch = getBatchForItem(item);
-                                        const currentStock = toNumber(selectedBatch?.quantity, 0);
-                                        const lineTotal = toNumber(product?.displayPrice ?? 0) * toNumber(item.quantity, 0);
-                                        const batchLoading = !!loadingBatches[String(item.productId)];
-
-                                        return (
-                                            <div key={item.id} className="rounded-2xl border border-gray-200/60 p-3 space-y-3 bg-white/40">
-                                                <div className="flex items-center justify-between gap-2">
-                                                    <Label className={`text-[10px] font-black uppercase tracking-widest ${textLabel}`}>
-                                                        Line {index + 1}
-                                                    </Label>
-
-                                                    {items.length > 1 && (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => setItems((prev) => prev.filter((i) => i.id !== item.id))}
-                                                            className="text-[10px] font-black uppercase tracking-widest text-red-500"
-                                                        >
-                                                            Remove
-                                                        </button>
-                                                    )}
-                                                </div>
-
-                                                <div className="space-y-2">
-                                                    <Select
-                                                        value={item.productId}
-                                                        onValueChange={(val) => handleProductChange(item.id, val)}
-                                                    >
-                                                        <SelectTrigger className={`rounded-2xl h-10 font-bold ${inputBg}`}>
-                                                            <SelectValue placeholder="Choose product..." />
-                                                        </SelectTrigger>
-                                                        <SelectContent className={`rounded-2xl ${isDark ? "bg-[#0F172A] text-white border-white/10" : ""}`}>
-                                                            {products.map((p) => (
-                                                                <SelectItem key={p.id} value={String(p.id)}>
-                                                                    {p.name} — {money(p.displayPrice)}
-                                                                </SelectItem>
-                                                            ))}
-                                                        </SelectContent>
-                                                    </Select>
-
-                                                    <Select
-                                                        value={item.batchId}
-                                                        onValueChange={(val) => handleBatchChange(item.id, val)}
-                                                        disabled={!item.productId || batchLoading}
-                                                    >
-                                                        <SelectTrigger className={`rounded-2xl h-10 font-bold ${inputBg}`}>
-                                                            <SelectValue placeholder={!item.productId ? "Select product first" : batchLoading ? "Loading batches..." : "Choose batch..."} />
-                                                        </SelectTrigger>
-                                                        <SelectContent className={`rounded-2xl ${isDark ? "bg-[#0F172A] text-white border-white/10" : ""}`}>
-                                                            {batches.map((b) => (
-                                                                <SelectItem key={b.id} value={String(b.id)}>
-                                                                    {b.batchNumber} • Exp: {b.expiryDate} • Qty: {b.quantity}
-                                                                </SelectItem>
-                                                            ))}
-                                                        </SelectContent>
-                                                    </Select>
-
-                                                    <div className="flex items-center gap-2">
-                                                        <Input
-                                                            type="number"
-                                                            min="1"
-                                                            max={currentStock || 1}
-                                                            className={`rounded-2xl h-10 ${inputBg}`}
-                                                            placeholder="Qty"
-                                                            value={item.quantity}
-                                                            disabled={!item.batchId}
-                                                            onChange={(e) => handleQuantityChange(item.id, e.target.value)}
-                                                        />
-
-                                                        <div className={`text-xs font-bold ${textLabel} min-w-[110px]`}>
-                                                            Stock: {currentStock}
-                                                        </div>
-                                                    </div>
-
-                                                    {item.batchId && (
-                                                        <div className="text-xs space-y-1">
-                                                            <div className="flex items-center justify-between">
-                                                                <span className={textLabel}>Batch</span>
-                                                                <span className={`font-black ${textValue}`}>
-                                                                    {selectedBatch?.batchNumber || "-"}
-                                                                </span>
-                                                            </div>
-                                                            <div className="flex items-center justify-between">
-                                                                <span className={textLabel}>Expiry</span>
-                                                                <span className={`font-black ${textValue}`}>
-                                                                    {selectedBatch?.expiryDate || "-"}
-                                                                </span>
-                                                            </div>
-                                                        </div>
-                                                    )}
-
-                                                    <div className="flex items-center justify-between text-xs">
-                                                        <span className={textLabel}>Unit Price</span>
-                                                        <span className={`font-black ${textValue}`}>{money(product?.displayPrice ?? 0)}</span>
-                                                    </div>
-
-                                                    <div className="flex items-center justify-between text-xs">
-                                                        <span className={textLabel}>Line Total</span>
-                                                        <span className={`font-black ${textValue}`}>{money(lineTotal)}</span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-
-                                <Button type="button" variant="outline" onClick={addLine} className="w-full rounded-2xl font-black">
-                                    <Plus className="mr-2 h-4 w-4" />
-                                    Add Another Line
-                                </Button>
-
-                                <div className="space-y-2">
-                                    <Label className={`text-[10px] font-black uppercase tracking-widest ${textLabel}`}>Sale Date</Label>
-                                    <Input
-                                        type="date"
-                                        className={`rounded-2xl h-10 ${inputBg}`}
-                                        value={saleDate}
-                                        onChange={(e) => setSaleDate(e.target.value)}
-                                    />
-                                </div>
-
-                                <div className="space-y-2">
-                                    <Label className={`text-[10px] font-black uppercase tracking-widest ${textLabel}`}>Notes</Label>
-                                    <Input
-                                        className={`rounded-2xl h-10 ${inputBg}`}
-                                        value={notes}
-                                        onChange={(e) => setNotes(e.target.value)}
-                                        placeholder="Optional note"
-                                    />
-                                </div>
-
-                                <div className="flex items-center justify-between pt-2 border-t border-gray-200/70">
-                                    <div>
-                                        <p className={`text-[10px] font-black uppercase tracking-widest ${textLabel}`}>Grand Total</p>
-                                        <p className={`text-2xl font-black ${textValue}`}>{money(grandTotal)}</p>
-                                    </div>
-
-                                    <Button type="submit" className="rounded-2xl font-black">
-                                        <CheckCircle2 className="mr-2 h-4 w-4" />
-                                        Save Sale
-                                    </Button>
-                                </div>
-                            </form>
-                        </CardContent>
-                    </Card>
-                </div>
-
-                <div className="lg:col-span-2 space-y-4">
-                    <Card className={`${bgCard} p-0 overflow-hidden`}>
-                        <CardHeader className={`p-6 border-b ${isDark ? "border-white/5" : "border-[#0F172A]/5"}`}>
-                            <CardTitle className={`font-black text-xl ${textValue}`}>Sales History</CardTitle>
-                            <CardDescription className="font-bold">
-                                Browse and manage recorded sales.
-                            </CardDescription>
-                        </CardHeader>
-
-                        <CardContent className="p-6 space-y-4">
-                            <div className="grid md:grid-cols-4 gap-3">
-                                <Input
-                                    className={`rounded-2xl h-10 ${inputBg}`}
-                                    placeholder="Search product / batch / bill / user"
-                                    value={filterSearch}
-                                    onChange={(e) => setFilterSearch(e.target.value)}
-                                />
-
-                                <Select value={filterStatus} onValueChange={setFilterStatus}>
-                                    <SelectTrigger className={`rounded-2xl h-10 ${inputBg}`}>
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="ALL">All Status</SelectItem>
-                                        <SelectItem value="ACTIVE">Active</SelectItem>
-                                        <SelectItem value="VOID">Void</SelectItem>
-                                    </SelectContent>
-                                </Select>
-
-                                <Input
-                                    type="date"
-                                    className={`rounded-2xl h-10 ${inputBg}`}
-                                    value={filterDate}
-                                    onChange={(e) => setFilterDate(e.target.value)}
-                                />
-
-                                <Select value={sortBy} onValueChange={setSortBy}>
-                                    <SelectTrigger className={`rounded-2xl h-10 ${inputBg}`}>
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="NEWEST">Newest</SelectItem>
-                                        <SelectItem value="OLDEST">Oldest</SelectItem>
-                                        <SelectItem value="QTY_HIGH">Qty High-Low</SelectItem>
-                                        <SelectItem value="QTY_LOW">Qty Low-High</SelectItem>
-                                    </SelectContent>
-                                </Select>
+            {/* ═══ RECORD TAB ═══════════════════════════════════════════════ */}
+            {tab === "record" && (
+                <Card className={`rounded-3xl shadow-xl ${cardBg}`}>
+                    <CardHeader>
+                        <CardTitle className={`text-xl ${textValue}`}>
+                            {editingBillId ? `Editing Draft #${editingBillId}` : editingLegacySaleId ? `Editing Sale #${editingLegacySaleId}` : "Record New Sale"}
+                        </CardTitle>
+                        <CardDescription className={textLabel}>Add products, select batches, then save as draft or finalize.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                        {/* Date & Notes */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label className={`font-bold text-xs uppercase tracking-widest ${textLabel}`}>Sale Date</Label>
+                                <Input type="date" value={saleDate} onChange={(e) => setSaleDate(e.target.value)} max={todayStr()} className={`rounded-2xl h-10 ${inputBg}`} />
                             </div>
+                            <div className="space-y-2">
+                                <Label className={`font-bold text-xs uppercase tracking-widest ${textLabel}`}>Notes (optional)</Label>
+                                <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Bill notes..." className={`rounded-2xl h-10 ${inputBg}`} />
+                            </div>
+                        </div>
+
+                        {/* Line Items */}
+                        <div className="space-y-3">
+                            <div className="flex items-center justify-between">
+                                <Label className={`font-bold text-xs uppercase tracking-widest ${textLabel}`}>Line Items</Label>
+                                {!editingLegacySaleId && (
+                                    <Button type="button" variant="outline" size="sm" onClick={addItem} className="rounded-2xl gap-1">
+                                        <Plus className="h-3 w-3" /> Add Line
+                                    </Button>
+                                )}
+                            </div>
+
+                            {items.map((item, idx) => (
+                                <div key={item.id} className={`p-4 rounded-2xl border ${isStaff ? "border-[#4E342E]/10 bg-[#EFEBE9]/50" : "border-gray-200 bg-gray-50/50"} space-y-3`}>
+                                    <div className="flex items-center justify-between">
+                                        <span className={`text-xs font-black uppercase tracking-widest ${textLabel}`}>Line #{idx + 1}</span>
+                                        {items.length > 1 && !editingLegacySaleId && (
+                                            <Button type="button" variant="ghost" size="icon" onClick={() => removeItem(item.id)} className="h-6 w-6">
+                                                <Trash2 className="h-3 w-3 text-red-500" />
+                                            </Button>
+                                        )}
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                                        {/* Product */}
+                                        <Select value={item.productId} onValueChange={(val) => handleProductChange(item.id, val)}>
+                                            <SelectTrigger className={`rounded-2xl h-10 ${inputBg}`}><SelectValue placeholder="Product..." /></SelectTrigger>
+                                            <SelectContent>
+                                                {products.map((p) => (
+                                                    <SelectItem key={p.productId ?? p.id} value={String(p.productId ?? p.id)}>
+                                                        {p.productName ?? p.name} — {money(p.sellingPrice ?? p.displayPrice ?? p.price)}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                        {/* Batch */}
+                                        <Select value={item.batchId} onValueChange={(val) => handleBatchChange(item.id, item.productId, val)}>
+                                            <SelectTrigger className={`rounded-2xl h-10 ${inputBg}`}><SelectValue placeholder="Batch..." /></SelectTrigger>
+                                            <SelectContent>
+                                                {(batchesByProduct[item.productId] || []).map((b) => (
+                                                    <SelectItem key={b.id} value={String(b.id)}>
+                                                        {b.batchNumber} • Exp: {b.expiryDate} • Qty: {b.quantity}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                        {/* Quantity */}
+                                        <Input type="number" min="1" placeholder="Qty" value={item.quantity} onChange={(e) => handleQtyChange(item.id, e.target.value)} className={`rounded-2xl h-10 ${inputBg}`} />
+                                        {/* Line total */}
+                                        <div className="flex items-center">
+                                            <span className={`font-bold text-sm ${textValue}`}>{money(getItemTotal(item))}</span>
+                                            {item.discountPercent > 0 && (
+                                                <Badge variant="outline" className="ml-2 text-[9px] text-[#007A5E] border-[#007A5E] bg-[#007A5E]/10 px-1 py-0 h-4">
+                                                    {item.discountPercent}% OFF
+                                                </Badge>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Form Total & Buttons */}
+                        <div className="flex items-center justify-between pt-4 border-t border-gray-200/70">
+                            <div>
+                                <span className={`text-xs font-black uppercase tracking-widest ${textLabel}`}>Bill Total</span>
+                                <span className={`text-2xl font-black ml-3 ${textValue}`}>{money(billFormTotal)}</span>
+                            </div>
+                            <div className="flex gap-2">
+                                {!editingLegacySaleId && useBillsApi && (
+                                    <Button variant="outline" onClick={handleSaveDraft} disabled={submitting} className="rounded-2xl gap-1">
+                                        <FileText className="h-4 w-4" /> {editingBillId ? "Update Draft" : "Save Draft"}
+                                    </Button>
+                                )}
+                                <Button onClick={handleFinalize} disabled={submitting} className="rounded-2xl gap-1">
+                                    <CheckCircle className="h-4 w-4" /> {editingLegacySaleId ? "Update Sale" : "Finalize & Deduct Stock"}
+                                </Button>
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
+
+            {/* ═══ HISTORY TAB ══════════════════════════════════════════════ */}
+            {tab === "history" && (
+                <Card className={`rounded-3xl shadow-xl ${cardBg}`}>
+                    <CardHeader>
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <CardTitle className={`text-xl ${textValue}`}>Sales History</CardTitle>
+                                <CardDescription className={textLabel}>
+                                    {useBillsApi ? "View, finalize, or void bills." : "View and manage recorded sales."}
+                                </CardDescription>
+                            </div>
+                            <Button variant="ghost" size="icon" onClick={fetchAll}><RefreshCw className="h-4 w-4" /></Button>
+                        </div>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        {/* Filters */}
+                        <div className="flex items-center gap-3 flex-wrap">
+                            <div className="relative flex-1 min-w-[200px]">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                                <Input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search sale/product/date..." className={`pl-10 rounded-2xl h-10 ${inputBg}`} />
+                            </div>
+                            {useBillsApi && (
+                                <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v === "ALL" ? "" : v)}>
+                                    <SelectTrigger className={`w-[160px] rounded-2xl h-10 ${inputBg}`}>
+                                        <Filter className="h-3 w-3 mr-1" /><SelectValue placeholder="All Statuses" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="ALL">All Statuses</SelectItem>
+                                        <SelectItem value="DRAFT">Draft</SelectItem>
+                                        <SelectItem value="FINALIZED">Finalized</SelectItem>
+                                        <SelectItem value="VOIDED">Voided</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            )}
+                        </div>
+
+                        {/* Sales Table */}
+                        <div className="rounded-2xl border border-gray-200/70 overflow-hidden">
+                            <Table>
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead className="px-6 font-black uppercase text-[10px] tracking-widest">{useBillsApi ? "Bill #" : "Sale #"}</TableHead>
+                                        <TableHead className="font-black uppercase text-[10px] tracking-widest">Product</TableHead>
+                                        <TableHead className="font-black uppercase text-[10px] tracking-widest">Date</TableHead>
+                                        <TableHead className="font-black uppercase text-[10px] tracking-widest">Qty</TableHead>
+                                        <TableHead className="font-black uppercase text-[10px] tracking-widest">Total</TableHead>
+                                        <TableHead className="font-black uppercase text-[10px] tracking-widest">Status</TableHead>
+                                        <TableHead className="text-right px-6 font-black uppercase text-[10px] tracking-widest">Actions</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {loading ? (
+                                        <TableRow><TableCell colSpan={7} className="text-center py-12"><p className={`${textLabel} font-bold text-sm`}>Loading...</p></TableCell></TableRow>
+                                    ) : filteredRows.length === 0 ? (
+                                        <TableRow><TableCell colSpan={7} className="text-center py-12"><p className={`${textLabel} font-bold text-sm`}>No sales found.</p></TableCell></TableRow>
+                                    ) : (
+                                        filteredRows.map((row) => {
+                                            const firstLine = row.lines?.[0];
+                                            const productNames = row.lines?.map((l) => l.productName).filter(Boolean).join(", ") || "-";
+                                            const totalQty = row.lines?.reduce((sum, l) => sum + (l.quantity || 0), 0) || 0;
+
+                                            return (
+                                                <TableRow key={`${row.isLegacy ? "s" : "b"}-${row.id}`} className="hover:bg-primary/[0.02] transition-colors">
+                                                    <TableCell className="px-6 py-4">
+                                                        <button type="button" onClick={() => openDetail(row)} className="text-left">
+                                                            <p className={`font-black text-[11px] ${textValue} hover:underline`}>{row.billNumber}</p>
+                                                        </button>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <p className={`font-bold text-sm ${textValue} truncate max-w-[200px]`}>{productNames}</p>
+                                                        {row.lines?.length > 1 && (
+                                                            <span className="text-xs text-gray-400">({row.lines.length} items)</span>
+                                                        )}
+                                                    </TableCell>
+                                                    <TableCell className={`font-bold text-sm ${textLabel}`}>{row.saleDate}</TableCell>
+                                                    <TableCell className="font-bold text-sm">{totalQty}</TableCell>
+                                                    <TableCell className="font-bold text-sm">{money(row.billTotal)}</TableCell>
+                                                    <TableCell>
+                                                        <Badge variant="outline" className={`text-[9px] font-black ${STATUS_COLORS[row.status] || ""}`}>
+                                                            {row.status}
+                                                        </Badge>
+                                                    </TableCell>
+                                                    <TableCell className="text-right px-6">
+                                                        <div className="flex items-center justify-end gap-1">
+                                                            <Button variant="ghost" size="icon" onClick={() => openDetail(row)} title="View">
+                                                                <Eye className="h-4 w-4" />
+                                                            </Button>
+
+                                                            {/* Edit & Delete for legacy sales and DRAFT bills */}
+                                                            {(row.isLegacy || row.status === "DRAFT") && (
+                                                                <>
+                                                                    <Button variant="ghost" size="icon" onClick={() => openEdit(row)} title="Edit">
+                                                                        <Edit2 className="h-4 w-4" />
+                                                                    </Button>
+                                                                    <Button variant="ghost" size="icon" onClick={() => { if (window.confirm("Delete this sale?")) handleDelete(row); }} title="Delete">
+                                                                        <Trash2 className="h-4 w-4 text-red-500" />
+                                                                    </Button>
+                                                                </>
+                                                            )}
+
+                                                            {/* Finalize button for DRAFT bills only */}
+                                                            {!row.isLegacy && row.status === "DRAFT" && (
+                                                                <Button variant="ghost" size="icon" onClick={() => handleFinalizeDraft(row.id)} disabled={submitting} title="Finalize">
+                                                                    <CheckCircle className="h-4 w-4 text-emerald-600" />
+                                                                </Button>
+                                                            )}
+
+                                                            {/* PDF download, Edit, Delete, and Void for FINALIZED bills — admin only for edit/delete/void */}
+                                                            {!row.isLegacy && row.status === "FINALIZED" && (
+                                                                <>
+                                                                    <Button variant="ghost" size="icon" onClick={() => handleDownloadPdf(row.id, row.billNumber)} title="Download PDF">
+                                                                        <Download className="h-4 w-4" />
+                                                                    </Button>
+                                                                    {isAdmin && (
+                                                                        <>
+                                                                            <Button variant="ghost" size="icon" onClick={() => openEdit(row)} title="Edit Sale">
+                                                                                <Edit2 className="h-4 w-4 text-blue-500" />
+                                                                            </Button>
+                                                                            <Button variant="ghost" size="icon" onClick={() => { if (window.confirm("Are you sure you want to delete this sale? Stock will be restored.")) handleDelete(row); }} title="Delete Sale">
+                                                                                <Trash2 className="h-4 w-4 text-red-500" />
+                                                                            </Button>
+                                                                            <Button variant="ghost" size="icon" onClick={() => openVoidDialog(row.id)} title="Void">
+                                                                                <Ban className="h-4 w-4 text-red-500" />
+                                                                            </Button>
+                                                                        </>
+                                                                    )}
+                                                                </>
+                                                            )}
+                                                        </div>
+                                                    </TableCell>
+                                                </TableRow>
+                                            );
+                                        })
+                                    )}
+                                </TableBody>
+                            </Table>
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
+
+            {/* ═══ DETAIL DIALOG ════════════════════════════════════════════ */}
+            <Dialog open={billDetailOpen} onOpenChange={setBillDetailOpen}>
+                <DialogContent className="rounded-[2rem] max-w-3xl max-h-[90vh] overflow-y-auto">
+                    <DialogHeader>
+                        <DialogTitle>Sale Details — {selectedBill?.billNumber}</DialogTitle>
+                        <DialogDescription>
+                            {selectedBill && (
+                                <span className="flex items-center gap-2 mt-1">
+                                    <Badge variant="outline" className={`text-[9px] font-black ${STATUS_COLORS[selectedBill.status] || ""}`}>
+                                        {selectedBill.status}
+                                    </Badge>
+                                    <span>Date: {selectedBill.saleDate}</span>
+                                    <span>By: {selectedBill.createdBy || "-"}</span>
+                                </span>
+                            )}
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    {selectedBill && (
+                        <div className="space-y-4">
+                            {selectedBill.notes && (
+                                <p className={`text-sm ${textLabel} italic`}>Notes: {selectedBill.notes}</p>
+                            )}
+
+                            {selectedBill.status === "VOIDED" && selectedBill.voidReason && (
+                                <div className="bg-red-50 border border-red-200 rounded-2xl p-3">
+                                    <p className="text-xs font-bold text-red-800 uppercase">Voided</p>
+                                    <p className="text-sm text-red-700">Reason: {selectedBill.voidReason}</p>
+                                    <p className="text-xs text-red-500 mt-1">
+                                        By {selectedBill.voidedBy} on {selectedBill.voidedAt ? new Date(selectedBill.voidedAt).toLocaleString() : "-"}
+                                    </p>
+                                </div>
+                            )}
 
                             <div className="rounded-2xl border border-gray-200/70 overflow-hidden">
                                 <Table>
                                     <TableHeader>
                                         <TableRow>
-                                            <TableHead className="px-6 font-black uppercase text-[10px] tracking-widest">Bill</TableHead>
                                             <TableHead className="font-black uppercase text-[10px] tracking-widest">Product</TableHead>
                                             <TableHead className="font-black uppercase text-[10px] tracking-widest">Batch</TableHead>
                                             <TableHead className="font-black uppercase text-[10px] tracking-widest">Qty</TableHead>
+                                            <TableHead className="font-black uppercase text-[10px] tracking-widest">Unit Price</TableHead>
+                                            <TableHead className="font-black uppercase text-[10px] tracking-widest">Disc</TableHead>
                                             <TableHead className="font-black uppercase text-[10px] tracking-widest">Total</TableHead>
-                                            <TableHead className="font-black uppercase text-[10px] tracking-widest">Date</TableHead>
-                                            {isAdmin && <TableHead className="text-right px-6 font-black uppercase text-[10px] tracking-widest">Action</TableHead>}
                                         </TableRow>
                                     </TableHeader>
-
                                     <TableBody>
-                                        {displaySales.length === 0 ? (
-                                            <TableRow>
-                                                <TableCell colSpan={isAdmin ? 7 : 6} className="text-center py-12">
-                                                    <p className={`${textLabel} font-bold text-sm`}>No sales found.</p>
+                                        {(selectedBill.lines || []).map((line, idx) => (
+                                            <TableRow key={line.id || idx}>
+                                                <TableCell className="px-4">
+                                                    <p className={`font-black ${textValue}`}>{line.productName}</p>
                                                 </TableCell>
+                                                <TableCell className="font-bold text-sm">{line.batchNumber || "-"}</TableCell>
+                                                <TableCell className="font-bold text-sm">{line.quantity}</TableCell>
+                                                <TableCell className="font-bold text-sm">
+                                                    {line.discountPercent > 0 ? (
+                                                        <>
+                                                            <span className="line-through text-red-500 block text-xs">{money(line.originalUnitPrice)}</span>
+                                                            {money(line.discountedUnitPrice)}
+                                                        </>
+                                                    ) : money(line.originalUnitPrice)}
+                                                </TableCell>
+                                                <TableCell>
+                                                    {line.discountPercent > 0 ? (
+                                                        <Badge variant="outline" className="text-[9px] text-[#007A5E] border-[#007A5E] bg-[#007A5E]/10 px-1 py-0 h-4">
+                                                            {line.discountPercent}% {line.discountNote ? `(${line.discountNote})` : ""}
+                                                        </Badge>
+                                                    ) : "-"}
+                                                </TableCell>
+                                                <TableCell className="font-bold text-sm">{money(line.totalAmount)}</TableCell>
                                             </TableRow>
-                                        ) : (
-                                            displaySales.map((sale) => (
-                                                <TableRow
-                                                    key={sale.id}
-                                                    className={`${isStaff ? "border-[#4E342E]/5 hover:bg-[#4E342E]/[0.02]" : "border-[#0F172A]/5 hover:bg-primary/[0.03]"} transition-colors`}
-                                                >
-                                                    <TableCell className="px-6 py-4">
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => openBillDetails(sale.saleGroupId ?? String(sale.id))}
-                                                            className="text-left"
-                                                        >
-                                                            <p className={`font-black text-[11px] ${textValue}`}>{sale.saleGroupId ?? sale.id}</p>
-                                                            <p className={`text-[10px] font-bold ${textLabel} uppercase`}>Line #{sale.id}</p>
-                                                        </button>
-                                                    </TableCell>
-
-                                                    <TableCell>
-                                                        <p className={`font-black ${textValue}`}>{sale.productName}</p>
-                                                        <p className={`text-[10px] font-bold ${textLabel} uppercase`}>
-                                                            ID: {sale.id} • User: {sale.recordedBy}
-                                                        </p>
-                                                    </TableCell>
-
-                                                    <TableCell>
-                                                        <p className={`font-black ${textValue}`}>{sale.batchNumber || "-"}</p>
-                                                        <p className={`text-[10px] font-bold ${textLabel} uppercase`}>
-                                                            {sale.expiryDate ? `Exp: ${sale.expiryDate}` : ""}
-                                                        </p>
-                                                    </TableCell>
-
-                                                    <TableCell className="font-bold text-lg">{sale.quantitySold}</TableCell>
-                                                    <TableCell className="font-bold text-sm">{money(sale.lineTotal)}</TableCell>
-                                                    <TableCell className={`font-bold text-sm ${textLabel}`}>{sale.saleDate}</TableCell>
-
-                                                    {isAdmin && (
-                                                        <TableCell className="text-right px-6">
-                                                            <div className="flex items-center justify-end gap-2">
-                                                                <Button
-                                                                    variant="ghost"
-                                                                    size="icon"
-                                                                    onClick={() => openEdit(sale)}
-                                                                >
-                                                                    <Edit2 className="h-4 w-4" />
-                                                                </Button>
-
-                                                                <Button
-                                                                    variant="ghost"
-                                                                    size="icon"
-                                                                    onClick={() => handleVoidSale(sale.id)}
-                                                                >
-                                                                    <Trash2 className="h-4 w-4 text-red-500" />
-                                                                </Button>
-                                                            </div>
-                                                        </TableCell>
-                                                    )}
-                                                </TableRow>
-                                            ))
-                                        )}
+                                        ))}
                                     </TableBody>
                                 </Table>
                             </div>
-                        </CardContent>
-                    </Card>
-                </div>
-            </div>
 
-            <Dialog open={editOpen} onOpenChange={setEditOpen}>
-                <DialogContent className="rounded-[2rem]">
-                    <DialogHeader>
-                        <DialogTitle>Edit Sale</DialogTitle>
-                        <DialogDescription>Update product, batch, quantity, or date.</DialogDescription>
-                    </DialogHeader>
+                            <div className="flex items-center justify-between pt-2 border-t border-gray-200/70">
+                                <span className={`text-[10px] font-black uppercase tracking-widest ${textLabel}`}>Total</span>
+                                <span className={`text-2xl font-black ${textValue}`}>{money(selectedBill.billTotal)}</span>
+                            </div>
 
-                    <div className="space-y-4">
-                        <div className="space-y-2">
-                            <Label>Product</Label>
-                            <Select
-                                value={editData?.productId ?? ""}
-                                onValueChange={async (val) => {
-                                    await ensureBatchesLoaded(val);
-                                    setEditData((prev) => ({
-                                        ...prev,
-                                        productId: val,
-                                        batchId: "",
-                                    }));
-                                }}
-                            >
-                                <SelectTrigger className="rounded-2xl h-10">
-                                    <SelectValue placeholder="Choose product..." />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {products.map((p) => (
-                                        <SelectItem key={p.id} value={String(p.id)}>
-                                            {p.name} — {money(p.displayPrice)}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
+                            {selectedBill.finalizedAt && (
+                                <p className={`text-xs ${textLabel}`}>
+                                    Finalized by {selectedBill.finalizedBy} on {new Date(selectedBill.finalizedAt).toLocaleString()}
+                                </p>
+                            )}
                         </div>
+                    )}
 
-                        <div className="space-y-2">
-                            <Label>Batch</Label>
-                            <Select
-                                value={editData?.batchId ?? ""}
-                                onValueChange={(val) =>
-                                    setEditData((prev) => ({ ...prev, batchId: val }))
-                                }
-                            >
-                                <SelectTrigger className="rounded-2xl h-10">
-                                    <SelectValue placeholder="Choose batch..." />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {(batchesByProduct[String(editData?.productId)] || []).map((b) => (
-                                        <SelectItem key={b.id} value={String(b.id)}>
-                                            {b.batchNumber} • Exp: {b.expiryDate} • Qty: {b.quantity}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
-
-                        <div className="space-y-2">
-                            <Label>Quantity</Label>
-                            <Input
-                                type="number"
-                                min="1"
-                                value={editData?.quantitySold ?? ""}
-                                onChange={(e) =>
-                                    setEditData((prev) => ({ ...prev, quantitySold: e.target.value }))
-                                }
-                            />
-                        </div>
-
-                        <div className="space-y-2">
-                            <Label>Sale Date</Label>
-                            <Input
-                                type="date"
-                                value={editData?.saleDate ?? ""}
-                                onChange={(e) =>
-                                    setEditData((prev) => ({ ...prev, saleDate: e.target.value }))
-                                }
-                            />
-                        </div>
-                    </div>
-
-                    <DialogFooter>
-                        <Button variant="ghost" onClick={() => setEditOpen(false)}>Cancel</Button>
-                        <Button onClick={handleEditSale}>Save</Button>
+                    <DialogFooter className="pt-4 gap-2">
+                        {selectedBill && !selectedBill.isLegacy && selectedBill.status === "FINALIZED" && (
+                            <Button variant="outline" className="rounded-2xl gap-1" onClick={() => handleDownloadPdf(selectedBill.id, selectedBill.billNumber)}>
+                                <Download className="h-4 w-4" /> Download PDF
+                            </Button>
+                        )}
+                        <Button variant="ghost" onClick={() => setBillDetailOpen(false)} className="rounded-2xl">Close</Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
 
-            <Dialog open={billOpen} onOpenChange={setBillOpen}>
-                <DialogContent className="rounded-[2rem] max-w-3xl">
+            {/* ═══ VOID DIALOG ══════════════════════════════════════════════ */}
+            <Dialog open={voidDialogOpen} onOpenChange={setVoidDialogOpen}>
+                <DialogContent className="rounded-[2rem]">
                     <DialogHeader>
-                        <DialogTitle>Bill Details</DialogTitle>
-                        <DialogDescription>Grouped view of all lines in this bill.</DialogDescription>
+                        <DialogTitle>Void Bill</DialogTitle>
+                        <DialogDescription>This will restore stock for all line items. This action cannot be undone.</DialogDescription>
                     </DialogHeader>
-
                     <div className="space-y-4">
-                        {selectedBillLines.length === 0 ? (
-                            <p className={`text-sm font-bold ${textLabel}`}>No bill lines found.</p>
-                        ) : (
-                            <>
-                                <div className="rounded-2xl border border-gray-200/70 overflow-hidden">
-                                    <Table>
-                                        <TableHeader>
-                                            <TableRow>
-                                                <TableHead className="font-black uppercase text-[10px] tracking-widest">Product</TableHead>
-                                                <TableHead className="font-black uppercase text-[10px] tracking-widest">Batch</TableHead>
-                                                <TableHead className="font-black uppercase text-[10px] tracking-widest">Qty</TableHead>
-                                                <TableHead className="font-black uppercase text-[10px] tracking-widest">Unit Price</TableHead>
-                                                <TableHead className="font-black uppercase text-[10px] tracking-widest">Line Total</TableHead>
-                                            </TableRow>
-                                        </TableHeader>
-
-                                        <TableBody>
-                                            {selectedBillLines.map((line) => (
-                                                <TableRow key={line.id}>
-                                                    <TableCell className="px-4">
-                                                        <p className={`font-black ${textValue}`}>{line.productName}</p>
-                                                        <p className={`text-[10px] font-bold ${textLabel} uppercase`}>
-                                                            ID: {line.id} • User: {line.recordedBy}
-                                                        </p>
-                                                    </TableCell>
-                                                    <TableCell className="font-bold text-sm">
-                                                        {line.batchNumber || "-"}
-                                                    </TableCell>
-                                                    <TableCell className="font-bold text-sm">{line.quantitySold}</TableCell>
-                                                    <TableCell className="font-bold text-sm">{money(line.unitPrice)}</TableCell>
-                                                    <TableCell className="font-bold text-sm">{money(line.lineTotal)}</TableCell>
-                                                </TableRow>
-                                            ))}
-                                        </TableBody>
-                                    </Table>
-                                </div>
-
-                                <div className="flex items-center justify-between pt-2 border-t border-gray-200/70 mt-2">
-                                    <div className={`text-[10px] font-black uppercase tracking-widest ${textLabel}`}>
-                                        Bill Total
-                                    </div>
-                                    <div className={`text-2xl font-black ${textValue}`}>
-                                        {money(selectedBillTotal)}
-                                    </div>
-                                </div>
-                            </>
-                        )}
+                        <div className="space-y-2">
+                            <Label className="font-bold text-xs uppercase tracking-widest">Reason for voiding (required)</Label>
+                            <Textarea value={voidReason} onChange={(e) => setVoidReason(e.target.value)} placeholder="Enter reason (min 5 characters)..." className="rounded-2xl min-h-[80px]" />
+                        </div>
                     </div>
-
-                    <DialogFooter className="pt-4">
-                        <Button
-                            type="button"
-                            variant="ghost"
-                            onClick={() => setBillOpen(false)}
-                            className={`py-4 rounded-2xl ${textLabel} hover:bg-black/5 font-black text-sm`}
-                        >
-                            Close
+                    <DialogFooter>
+                        <Button variant="ghost" onClick={() => setVoidDialogOpen(false)}>Cancel</Button>
+                        <Button variant="destructive" onClick={handleVoid} disabled={voiding || voidReason.trim().length < 5} className="rounded-2xl gap-1">
+                            <Ban className="h-4 w-4" /> Void Bill
                         </Button>
                     </DialogFooter>
                 </DialogContent>

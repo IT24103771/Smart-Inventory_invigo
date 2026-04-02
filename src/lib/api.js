@@ -1,124 +1,190 @@
 const API_BASE_URL = "http://localhost:8080/api";
-// Login a user
+
+export const authHeaders = (extra = {}) => {
+    const token = localStorage.getItem("invigo_token");
+
+    const headers = {
+        "Content-Type": "application/json",
+        ...extra,
+    };
+
+    if (token) {
+        headers.Authorization = `Bearer ${token}`;
+    }
+
+    return headers;
+};
+
+export const authFetch = async (url, options = {}) => {
+    const response = await fetch(url, {
+        ...options,
+        headers: authHeaders(options.headers || {}),
+    });
+
+    if (response.status === 401 || response.status === 403) {
+        localStorage.removeItem("invigo_token");
+        localStorage.removeItem("invigo_user");
+    }
+
+    return response;
+};
+
+// LOGIN
 export const loginUser = async (username, password) => {
     const response = await fetch(`${API_BASE_URL}/auth/login`, {
         method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password }),
     });
+
+    const data = await response.json().catch(() => ({}));
+
     if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || "Invalid credentials");
+        throw new Error(data.message || "Invalid credentials");
     }
-    return response.json();
+
+    return data;
 };
-// Fetch all users
+
+// USERS
 export const getUsers = async () => {
-    const response = await fetch(`${API_BASE_URL}/admin/users`);
+    const response = await authFetch(`${API_BASE_URL}/admin/users`);
+    const data = await response.json().catch(() => []);
+
     if (!response.ok) {
-        throw new Error("Failed to fetch users");
+        throw new Error(data.message || "Failed to fetch users");
     }
-    return response.json();
+
+    return data;
 };
-// Create a new user
+
 export const createUser = async (userData) => {
-    const response = await fetch(`${API_BASE_URL}/admin/users`, {
+    const response = await authFetch(`${API_BASE_URL}/admin/users`, {
         method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-        },
         body: JSON.stringify(userData),
     });
+
+    const data = await response.json().catch(() => ({}));
+
     if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || "Failed to create user");
+        throw new Error(data.message || "Failed to create user");
     }
-    return response.json();
+
+    return data;
 };
-// Update an existing user
+
 export const updateUser = async (id, userData) => {
-    const response = await fetch(`${API_BASE_URL}/admin/users/${id}`, {
+    const response = await authFetch(`${API_BASE_URL}/admin/users/${id}`, {
         method: "PUT",
-        headers: {
-            "Content-Type": "application/json",
-        },
         body: JSON.stringify(userData),
     });
+
+    const data = await response.json().catch(() => ({}));
+
     if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || "Failed to update user");
+        throw new Error(data.message || "Failed to update user");
     }
-    return response.json();
+
+    return data;
 };
-// Delete a user (revoke access)
+
 export const deleteUser = async (id) => {
-    const response = await fetch(`${API_BASE_URL}/admin/users/${id}`, {
+    const response = await authFetch(`${API_BASE_URL}/admin/users/${id}`, {
         method: "DELETE",
     });
+
     if (!response.ok) {
-        throw new Error("Failed to delete user");
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.message || "Failed to delete user");
     }
 };
-/** Fetch the logged-in staff member's own profile */
-export const getStaffProfile = async (id) => {
-    const response = await fetch(`${API_BASE_URL}/staff/profile/${id}`);
-    if (!response.ok) {
-        throw new Error("Failed to fetch profile");
-    }
-    return response.json();
-};
-/** Update name and/or password for the logged-in staff member */
-export const updateStaffProfile = async (id, payload) => {
-    const response = await fetch(`${API_BASE_URL}/staff/profile/${id}`, {
+
+export const unlockUser = async (id) => {
+    const response = await authFetch(`${API_BASE_URL}/admin/users/${id}/unlock`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+        throw new Error(data.message || "Failed to unlock user");
+    }
+
+    return data;
+};
+
+// STAFF PROFILE
+export const getStaffProfile = async (id) => {
+    const response = await authFetch(`${API_BASE_URL}/staff/profile/${id}`);
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+        throw new Error(data.message || "Failed to fetch profile");
+    }
+
+    return data;
+};
+
+export const updateStaffProfile = async (id, payload) => {
+    const response = await authFetch(`${API_BASE_URL}/staff/profile/${id}`, {
+        method: "PUT",
         body: JSON.stringify(payload),
     });
+
+    const data = await response.json().catch(() => ({}));
+
     if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || "Failed to update profile");
+        throw new Error(data.message || "Failed to update profile");
     }
-    return response.json();
+
+    return data;
 };
-// --- Product Management API ---
-export const getProducts = async () => {
-    const response = await fetch(`${API_BASE_URL}/products`);
-    if (!response.ok) {
-        throw new Error("Failed to fetch products");
-    }
-    return response.json();
-};
-export const createProduct = async (productData) => {
-    const response = await fetch(`${API_BASE_URL}/products`, {
+
+// FORGOT PASSWORD / OTP
+export const forgotPassword = async (email) => {
+    const response = await fetch(`${API_BASE_URL}/auth/forgot-password`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(productData),
+        body: JSON.stringify({ email }),
     });
+
+    const data = await response.json().catch(() => ({}));
+
     if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || "Failed to create product");
+        throw new Error(data.message || "Failed to send OTP");
     }
-    return response.json();
+
+    return data;
 };
-export const updateProduct = async (id, productData) => {
-    const response = await fetch(`${API_BASE_URL}/products/${id}`, {
-        method: "PUT",
+
+export const verifyOtp = async (email, otp) => {
+    const response = await fetch(`${API_BASE_URL}/auth/verify-otp`, {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(productData),
+        body: JSON.stringify({ email, otp }),
     });
+
+    const data = await response.json().catch(() => ({}));
+
     if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || "Failed to update product");
+        throw new Error(data.message || "OTP verification failed");
     }
-    return response.json();
+
+    return data;
 };
-export const deleteProduct = async (id) => {
-    const response = await fetch(`${API_BASE_URL}/products/${id}`, {
-        method: "DELETE",
+
+export const resetPassword = async (email, otp, newPassword) => {
+    const response = await fetch(`${API_BASE_URL}/auth/reset-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, otp, newPassword }),
     });
+
+    const data = await response.json().catch(() => ({}));
+
     if (!response.ok) {
-        throw new Error("Failed to delete product");
+        throw new Error(data.message || "Password reset failed");
     }
+
+    return data;
 };

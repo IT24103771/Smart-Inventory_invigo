@@ -1,147 +1,222 @@
 const API_BASE_URL = "http://localhost:8080/api";
 
-const parseError = async (response, fallbackMessage) => {
-    try {
-        const data = await response.json();
-        return data.message || data.error || fallbackMessage;
-    } catch {
-        try {
-            const text = await response.text();
-            return text || fallbackMessage;
-        } catch {
-            return fallbackMessage;
-        }
-    }
+const authHeaders = (extra = {}) => {
+  const token = localStorage.getItem("invigo_token");
+
+  const headers = {
+    "Content-Type": "application/json",
+    ...extra,
+  };
+
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  return headers;
 };
+
+const authFetch = async (url, options = {}) => {
+  const response = await fetch(url, {
+    ...options,
+    headers: authHeaders(options.headers || {}),
+  });
+
+  if (response.status === 401 || response.status === 403) {
+    localStorage.removeItem("invigo_token");
+    localStorage.removeItem("invigo_user");
+  }
+
+  return response;
+};
+
+const parseError = async (response, fallbackMessage) => {
+  try {
+    const data = await response.json();
+    return data.message || data.error || fallbackMessage;
+  } catch {
+    try {
+      const text = await response.text();
+      return text || fallbackMessage;
+    } catch {
+      return fallbackMessage;
+    }
+  }
+};
+
+// ─── Product & Inventory Helpers ────────────────────────────────────────────
 
 export const getProducts = async () => {
-    const response = await fetch(`${API_BASE_URL}/products`);
-    if (!response.ok) {
-        throw new Error(await parseError(response, "Failed to fetch products"));
-    }
-    return response.json();
+  const response = await authFetch(`${API_BASE_URL}/products`);
+  if (!response.ok) {
+    throw new Error(await parseError(response, "Failed to fetch products"));
+  }
+  return response.json();
 };
 
-export const getAvailableQuantity = async (productId) => {
-    const response = await fetch(`${API_BASE_URL}/products/${productId}/available-quantity`);
-    if (!response.ok) {
-        throw new Error(await parseError(response, "Failed to fetch available quantity"));
-    }
-
-    // Your backend returns a raw integer, not { availableQuantity: ... }
-    const data = await response.json();
-    return Number(data ?? 0);
+export const getBatchesByProduct = async (productId) => {
+  const response = await authFetch(`${API_BASE_URL}/inventory/by-product/${productId}`);
+  if (!response.ok) {
+    throw new Error(await parseError(response, "Failed to fetch available batches"));
+  }
+  return response.json();
 };
 
-export const getSalesHistory = async () => {
-    const response = await fetch(`${API_BASE_URL}/sales`);
-    if (!response.ok) {
-        throw new Error(await parseError(response, "Failed to fetch sales history"));
-    }
+export const getDiscountLookup = async (productId, batchId) => {
+  const response = await authFetch(
+    `${API_BASE_URL}/discounts/lookup?productId=${productId}&batchId=${batchId}`
+  );
 
-    const sales = await response.json();
+  if (!response.ok) {
+    return { discountPercent: 0, note: "" };
+  }
 
-    // Your backend SaleResponse is already flat:
-    // {
-    //   id, productId, productName, batchId, batchNumber, expiryDate,
-    //   quantity, saleDate, createdAt
-    // }
-    return sales
-        .map((s) => ({
-            ...s,
-            productId: String(s.productId),
-            productName: s.productName,
-            quantitySold: s.quantity,
-            unitPrice: Number(s.unitPrice ?? 0), // not provided by backend yet
-            lineTotal: Number(s.lineTotal ?? 0), // not provided by backend yet
-            saleGroupId: String(s.id),
-            status: "ACTIVE",
-            recordedBy: s.recordedBy ?? "System",
-        }))
-        .sort(
-            (a, b) =>
-                new Date(b.saleDate).getTime() - new Date(a.saleDate).getTime() ||
-                b.id - a.id
-        );
+  return response.json();
 };
 
-export const recordPosSale = async (request) => {
-    // IMPORTANT:
-    // Your current backend expects ONE sale at a time with:
-    // { productId, batchId, quantity, saleDate }
-    //
-    // If the UI sends multiple items, we create them one by one.
-    if (!request?.items || !Array.isArray(request.items) || request.items.length === 0) {
-        throw new Error("No sale items provided");
-    }
+// ─── Legacy Single-Sale Endpoints (backward compat) ─────────────────────────
 
-    const results = [];
-
-    for (const item of request.items) {
-        const payload = {
-            productId: Number(item.productId),
-            batchId: Number(item.batchId),
-            quantity: Number(item.quantity),
-            saleDate: request.saleDate,
-        };
-
-        if (!payload.productId) throw new Error("productId is required");
-        if (!payload.batchId) throw new Error("batchId is required");
-        if (!payload.quantity || payload.quantity <= 0) throw new Error("quantity must be greater than 0");
-        if (!payload.saleDate) throw new Error("saleDate is required");
-
-        const response = await fetch(`${API_BASE_URL}/sales`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-        });
-
-        if (!response.ok) {
-            throw new Error(await parseError(response, "Failed to record sale"));
-        }
-
-        results.push(await response.json());
-    }
-
-    return results;
+export const getSales = async () => {
+  const response = await authFetch(`${API_BASE_URL}/sales`);
+  if (!response.ok) {
+    throw new Error(await parseError(response, "Failed to fetch sales history"));
+  }
+  return response.json();
 };
 
-export const voidSale = async (saleId) => {
-    const response = await fetch(`${API_BASE_URL}/sales/${saleId}`, {
-        method: "DELETE",
-    });
+export const createSale = async (payload) => {
+  const response = await authFetch(`${API_BASE_URL}/sales`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 
-    if (!response.ok) {
-        throw new Error(await parseError(response, "Failed to delete sale"));
-    }
+  if (!response.ok) {
+    throw new Error(await parseError(response, "Could not save sale."));
+  }
 
-    return true;
+  return response.json();
 };
 
-export const editSaleQuantity = async (saleId, updateData) => {
-    // Your backend PUT expects the full CreateSaleRequest shape:
-    // { productId, batchId, quantity, saleDate }
-    const payload = {
-        productId: Number(updateData.productId),
-        batchId: Number(updateData.batchId),
-        quantity: Number(updateData.quantity),
-        saleDate: updateData.saleDate,
-    };
+export const updateSale = async (saleId, payload) => {
+  const response = await authFetch(`${API_BASE_URL}/sales/${saleId}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
 
-    if (!payload.productId) throw new Error("productId is required for update");
-    if (!payload.batchId) throw new Error("batchId is required for update");
-    if (!payload.quantity || payload.quantity <= 0) throw new Error("quantity must be greater than 0");
-    if (!payload.saleDate) throw new Error("saleDate is required for update");
+  if (!response.ok) {
+    throw new Error(await parseError(response, "Could not update sale."));
+  }
 
-    const response = await fetch(`${API_BASE_URL}/sales/${saleId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-    });
+  return response.json();
+};
 
-    if (!response.ok) {
-        throw new Error(await parseError(response, "Failed to edit sale"));
-    }
+export const deleteSale = async (saleId) => {
+  const response = await authFetch(`${API_BASE_URL}/sales/${saleId}`, {
+    method: "DELETE",
+  });
 
-    return response.json();
+  if (!response.ok) {
+    throw new Error(await parseError(response, "Could not delete sale."));
+  }
+
+  try { return await response.json(); } catch { return { success: true }; }
+};
+
+// ─── Bill-Based Endpoints ───────────────────────────────────────────────────
+
+export const createBill = async (payload) => {
+  const response = await authFetch(`${API_BASE_URL}/bills`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseError(response, "Could not create bill."));
+  }
+
+  return response.json();
+};
+
+export const getBills = async (statusFilter) => {
+  const params = statusFilter ? `?status=${statusFilter}` : "";
+  const response = await authFetch(`${API_BASE_URL}/bills${params}`);
+  if (!response.ok) {
+    throw new Error(await parseError(response, "Failed to fetch bills"));
+  }
+  return response.json();
+};
+
+export const getBill = async (billId) => {
+  const response = await authFetch(`${API_BASE_URL}/bills/${billId}`);
+  if (!response.ok) {
+    throw new Error(await parseError(response, "Failed to fetch bill"));
+  }
+  return response.json();
+};
+
+export const updateDraft = async (billId, payload) => {
+  const response = await authFetch(`${API_BASE_URL}/bills/${billId}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseError(response, "Could not update draft."));
+  }
+
+  return response.json();
+};
+
+export const finalizeBill = async (billId) => {
+  const response = await authFetch(`${API_BASE_URL}/bills/${billId}/finalize`, {
+    method: "POST",
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseError(response, "Could not finalize bill."));
+  }
+
+  return response.json();
+};
+
+export const voidBill = async (billId, reason) => {
+  const response = await authFetch(`${API_BASE_URL}/bills/${billId}/void`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseError(response, "Could not void bill."));
+  }
+
+  return response.json();
+};
+
+export const deleteDraft = async (billId) => {
+  const response = await authFetch(`${API_BASE_URL}/bills/${billId}`, {
+    method: "DELETE",
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseError(response, "Could not delete draft."));
+  }
+
+  try { return await response.json(); } catch { return { success: true }; }
+};
+
+export const getReceipt = async (billId) => {
+  const response = await authFetch(`${API_BASE_URL}/bills/${billId}/receipt`);
+  if (!response.ok) {
+    throw new Error(await parseError(response, "Failed to fetch receipt"));
+  }
+  return response.json();
+};
+
+export const getReceiptPdf = async (billId) => {
+  const response = await authFetch(`${API_BASE_URL}/bills/${billId}/receipt/pdf`, {
+    headers: { Accept: "application/pdf" },
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response, "Failed to generate receipt PDF"));
+  }
+  return response.blob();
 };

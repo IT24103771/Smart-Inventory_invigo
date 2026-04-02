@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { getCurrentUser } from "@/lib/auth";
+import { authFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -36,11 +37,8 @@ const Profile = () => {
 
     try {
       // Connect to backend endpoint: PUT /api/users/{id}/change-password
-      const response = await fetch(`/api/users/${user.id}/change-password`, {
+      const response = await authFetch(`/api/users/${user.id}/change-password`, {
         method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({ currentPassword, newPassword }),
       });
 

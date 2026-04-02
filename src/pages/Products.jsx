@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { authFetch } from "@/lib/api";
 import "../styles/Products.css";
 
 const API = "/api/products";
@@ -141,7 +142,7 @@ const Products = () => {
   const loadProducts = async () => {
     try {
       setLoading(true);
-      const res = await fetch(API);
+      const res = await authFetch(API);
       if (!res.ok) throw new Error("Failed to load products");
       const data = await res.json();
       setProducts((Array.isArray(data) ? data : []).map(p => ({
@@ -224,9 +225,8 @@ const Products = () => {
     try {
       const url = isEditing ? `${API}/${editingId}` : API;
       const method = isEditing ? "PUT" : "POST";
-      const res = await fetch(url, {
+      const res = await authFetch(url, {
         method,
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
       if (!res.ok) {
@@ -267,7 +267,7 @@ const Products = () => {
   const onDelete = async (id) => {
     if (!window.confirm("Delete product?")) return;
     try {
-      await fetch(`${API}/${id}`, { method: "DELETE" });
+      await authFetch(`${API}/${id}`, { method: "DELETE" });
       loadProducts();
     } catch (err) {
       setErrors(["Delete failed"]);

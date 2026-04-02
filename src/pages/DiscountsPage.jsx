@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { authFetch } from "@/lib/api";
 import "../styles/Discounts.css";
 
 const API_BASE = "/api";
@@ -12,6 +13,10 @@ const DiscountsPage = ({ role = "Staff" }) => {
   const [error, setError] = useState("");
 
   const [selectedProductId, setSelectedProductId] = useState("");
+  const [batches, setBatches] = useState([]);
+  const [loadingBatches, setLoadingBatches] = useState(false);
+  const [selectedBatchId, setSelectedBatchId] = useState("");
+
   const [discountPercent, setDiscountPercent] = useState("");
   const [note, setNote] = useState("");
 
@@ -30,7 +35,7 @@ const DiscountsPage = ({ role = "Staff" }) => {
         setLoadingProducts(true);
         setError("");
 
-        const res = await fetch(`${API_BASE}/products`);
+        const res = await authFetch(`${API_BASE}/products`);
         if (!res.ok) throw new Error("Failed to load products");
 
         const data = await res.json();
@@ -55,7 +60,7 @@ const DiscountsPage = ({ role = "Staff" }) => {
       setLoadingDiscounts(true);
       setError("");
 
-      const res = await fetch(`${API_BASE}/discounts`);
+      const res = await authFetch(`${API_BASE}/discounts`);
       if (!res.ok) throw new Error("Failed to load discounts");
 
       const data = await res.json();
@@ -72,8 +77,34 @@ const DiscountsPage = ({ role = "Staff" }) => {
     loadDiscounts();
   }, []);
 
+  useEffect(() => {
+    if (!selectedProductId) {
+      setBatches([]);
+      setSelectedBatchId("");
+      return;
+    }
+
+    const loadBatches = async () => {
+      try {
+        setLoadingBatches(true);
+        const res = await authFetch(`${API_BASE}/inventory/by-product/${selectedProductId}`);
+        if (!res.ok) throw new Error("Failed to load batches");
+        const data = await res.json();
+        setBatches(Array.isArray(data) ? data : []);
+      } catch (e) {
+        setError(e.message || "Something went wrong loading batches");
+        setBatches([]);
+      } finally {
+        setLoadingBatches(false);
+      }
+    };
+
+    loadBatches();
+  }, [selectedProductId]);
+
   const validate = () => {
     if (!selectedProductId) return "Please select a product.";
+    if (!selectedBatchId) return "Please select an inventory batch.";
     const pct = Number(discountPercent);
     if (!discountPercent || Number.isNaN(pct)) return "Please enter a valid discount %.";
     if (!Number.isInteger(pct)) return "Discount % must be a whole number.";
@@ -101,14 +132,14 @@ const DiscountsPage = ({ role = "Staff" }) => {
 
       const payload = {
         productId: Number(selectedProductId),
+        batchId: Number(selectedBatchId),
         discountPercent: Number(discountPercent),
         note: note?.trim() || null,
         active: true,
       };
 
-      const res = await fetch(`${API_BASE}/discounts`, {
+      const res = await authFetch(`${API_BASE}/discounts`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
@@ -127,6 +158,7 @@ const DiscountsPage = ({ role = "Staff" }) => {
       setDiscountPercent("");
       setNote("");
       setSelectedProductId("");
+      setSelectedBatchId("");
     } catch (e) {
       setError(e.message || "Could not apply discount");
     }
@@ -159,14 +191,14 @@ const DiscountsPage = ({ role = "Staff" }) => {
 
       const payload = {
         productId: Number(d.productId),
+        batchId: Number(d.batchId),
         discountPercent: Number(editDiscountPercent),
         note: editNote?.trim() || null,
         active: editActive,
       };
 
-      const res = await fetch(`${API_BASE}/discounts/${d.id}`, {
+      const res = await authFetch(`${API_BASE}/discounts/${d.id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
@@ -194,7 +226,7 @@ const DiscountsPage = ({ role = "Staff" }) => {
     try {
       setError("");
 
-      const res = await fetch(`${API_BASE}/discounts/${id}`, { method: "DELETE" });
+      const res = await authFetch(`${API_BASE}/discounts/${id}`, { method: "DELETE" });
       if (!res.ok) {
         let msg = "Failed to delete discount";
         try {
@@ -216,7 +248,7 @@ const DiscountsPage = ({ role = "Staff" }) => {
       setError("");
       const newValue = !d.active;
 
-      const res = await fetch(`${API_BASE}/discounts/${d.id}/active?value=${newValue}`, {
+      const res = await authFetch(`${API_BASE}/discounts/${d.id}/active?value=${newValue}`, {
         method: "PATCH",
       });
 
@@ -272,6 +304,26 @@ const DiscountsPage = ({ role = "Staff" }) => {
           </div>
 
           <div className="field">
+            <label>Inventory Batch</label>
+            {loadingBatches ? (
+              <div className="skeleton">Loading batches…</div>
+            ) : (
+              <select
+                value={selectedBatchId}
+                onChange={(e) => setSelectedBatchId(e.target.value)}
+                disabled={!selectedProductId}
+              >
+                <option value="">-- Select batch --</option>
+                {batches.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.batchNumber} (Qty: {b.quantity}, Exp: {b.expiryDate || "N/A"})
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          <div className="field">
             <label>Discount %</label>
             <input
               type="number"
@@ -300,6 +352,11 @@ const DiscountsPage = ({ role = "Staff" }) => {
               <div className="preview-name">{selectedProduct.name}</div>
               <div className="preview-meta">
                 <span>{selectedProduct.category || "No category"}</span>
+                {selectedBatchId && batches.find(b => String(b.id) === String(selectedBatchId)) && (
+                  <span style={{ marginLeft: "10px", color: "var(--brand-accent)" }}>
+                    Batch: {batches.find(b => String(b.id) === String(selectedBatchId)).batchNumber}
+                  </span>
+                )}
               </div>
             </div>
 
@@ -335,11 +392,17 @@ const DiscountsPage = ({ role = "Staff" }) => {
                 <div className="list-item" key={d.id}>
                   <div className="li-left">
                     <div className="li-title">
-                      {d.productName || `Product #${d.productId}`}
+                      {d.productName || `Product #${d.productId}`} 
+                      <span style={{ fontSize: "0.85em", color: "#666", marginLeft: "8px" }}>
+                        (Batch {d.batchNumber || `#${d.batchId}`})
+                      </span>
                     </div>
 
                     {!isEditing ? (
-                      <div className="li-sub">{d.note || "No note"}</div>
+                      <div className="li-sub">
+                        {d.note || "No note"}
+                        {d.expiryDate && <span style={{ marginLeft: "10px" }}>Exp: {d.expiryDate}</span>}
+                      </div>
                     ) : (
                       <div className="edit-box">
                         <div className="edit-row">

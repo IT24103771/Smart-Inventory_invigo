@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, } from "@/components/ui/select";
-import { getUsers, createUser, updateUser, deleteUser } from "@/lib/api";
+import { getUsers, createUser, updateUser, deleteUser, unlockUser } from "@/lib/api";
 import SalesModule from "@/components/SalesModule";
 import InventoryPage from "./InventoryPage";
 import DiscountsPage from "./DiscountsPage";
@@ -210,7 +210,15 @@ const UserManagement = ({ users, setUsers }) => {
   const [globalError, setGlobalError] = useState("");
   // Create State
   const [createOpen, setCreateOpen] = useState(false);
-  const [formData, setFormData] = useState({ username: "", password: "", name: "", doj: "", role: "Staff" });
+  const [formData, setFormData] = useState({
+    username: "",
+    password: "",
+    name: "",
+    email: "",
+    doj: "",
+    role: "Staff",
+    status: "ACTIVE",
+  });
   const [isCreating, setIsCreating] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
@@ -276,8 +284,11 @@ const UserManagement = ({ users, setUsers }) => {
       // Map role to uppercase for the Java backend Enum
       const payload = {
         ...formData,
+        username: formData.username.trim(),
+        name: formData.name.trim(),
+        email: formData.email?.trim() || null,
         role: formData.role.toUpperCase(),
-        status: "ACTIVE"
+        status: formData.status || "ACTIVE",
       };
       const newUser = await createUser(payload);
       // Ensure the returned role matches our local type casing
@@ -286,7 +297,7 @@ const UserManagement = ({ users, setUsers }) => {
       }
       setUsers((prev) => [...prev, newUser]);
       setCreateOpen(false);
-      setFormData({ username: "", password: "", name: "", doj: "", role: "Staff" });
+      setFormData({ username: "", password: "", name: "", email: "", doj: "", role: "Staff", status: "ACTIVE" });
     }
     catch (err) {
       setError(err.message || "Failed to create user");
@@ -328,11 +339,16 @@ const UserManagement = ({ users, setUsers }) => {
     }
     setIsEditing(true);
     try {
-      const payload = { ...editData };
-      if (editPassword)
+      const payload = {
+        ...editData,
+        username: editData.username.trim(),
+        name: editData.name.trim(),
+        email: editData.email?.trim() || null,
+        role: editData.role.toUpperCase(),
+      };
+      if (editPassword) {
         payload.password = editPassword;
-      if (payload.role)
-        payload.role = payload.role.toUpperCase(); // For Java Enum
+      }
       const updatedUser = await updateUser(editData.id, payload);
       // Fix casing for local state
       if (updatedUser.role) {
@@ -365,10 +381,14 @@ const UserManagement = ({ users, setUsers }) => {
     const currentStatus = user.status || "ACTIVE";
     const newStatus = currentStatus === "ACTIVE" ? "INACTIVE" : "ACTIVE";
     try {
-      const payload = { ...user, status: newStatus };
-      if (payload.role) {
-        payload.role = payload.role.toUpperCase(); // For Java Enum
-      }
+      const payload = {
+        username: user.username,
+        name: user.name,
+        email: user.email || null,
+        doj: user.doj,
+        role: (user.role || "STAFF").toUpperCase(),
+        status: newStatus,
+      };
       const updatedUser = await updateUser(user.id, payload);
 
       // Fix casing for local state
@@ -408,6 +428,7 @@ const UserManagement = ({ users, setUsers }) => {
           <TableHeader className="bg-[#0F172A]/[0.02]">
             <TableRow className="border-[#0F172A]/5">
               <TableHead className="px-8 font-black uppercase text-[10px] tracking-widest">Identity</TableHead>
+              <TableHead className="font-black uppercase text-[10px] tracking-widest">Email</TableHead>
               <TableHead className="font-black uppercase text-[10px] tracking-widest">Position</TableHead>
               <TableHead className="font-black uppercase text-[10px] tracking-widest">Entry Date</TableHead>
               <TableHead className="font-black uppercase text-[10px] tracking-widest">Status</TableHead>
@@ -416,7 +437,7 @@ const UserManagement = ({ users, setUsers }) => {
           </TableHeader>
           <TableBody>
             {loadingUsers ? (<TableRow>
-              <TableCell colSpan={5} className="text-center py-12">
+              <TableCell colSpan={6} className="text-center py-12">
                 <div className="w-8 h-8 mx-auto border-4 border-[#007A5E] border-t-transparent rounded-full animate-spin"></div>
                 <p className="mt-4 text-[#0F172A]/40 font-bold uppercase tracking-widest text-[10px]">Syncing with Mainframe...</p>
               </TableCell>
@@ -435,6 +456,7 @@ const UserManagement = ({ users, setUsers }) => {
                   <p className="text-[10px] font-bold text-black/30">@{user.username}</p>
                 </div>
               </TableCell>
+              <TableCell className="font-bold text-sm text-[#0F172A]/60">{user.email || "-"}</TableCell>
               <TableCell>
                 <Badge className={`rounded-lg px-2 text-[10px] font-black uppercase tracking-widest border-none ${user.role === "Admin" ? "bg-purple-100 text-purple-600" : "bg-emerald-100 text-emerald-600"}`}>
                   {user.role}
@@ -450,6 +472,21 @@ const UserManagement = ({ users, setUsers }) => {
               </TableCell>
               <TableCell className="text-right px-8">
                 <div className="flex items-center justify-end gap-2">
+                  {user.accountLocked && (
+                    <Button
+                      size="sm"
+                      onClick={async () => {
+                        try {
+                          const updated = await unlockUser(user.id);
+                          setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
+                        } catch (err) {
+                          alert(err.message);
+                        }
+                      }}
+                    >
+                      Unlock
+                    </Button>
+                  )}
                   <Button variant="ghost" size="icon" onClick={() => handleToggleStatus(user)} className={`rounded-xl transition-all ${user.status === "ACTIVE" ? "text-red-500 hover:bg-red-500/10" : "text-emerald-500 hover:bg-emerald-500/10"}`} title={user.status === "ACTIVE" ? "Deactivate User" : "Activate User"}>
                     <Power size={16} />
                   </Button>

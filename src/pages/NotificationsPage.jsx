@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { authFetch } from "@/lib/api";
 import "../styles/NotificationsPage.css";
 
-const API = "http://localhost:8080";
+const API = "/api";
 
 export default function NotificationsPage() {
   const navigate = useNavigate();
@@ -23,7 +24,7 @@ export default function NotificationsPage() {
     try {
       setLoading(true);
       setError("");
-      const res = await fetch(`${API}/api/mails/inbox/${me.id}`);
+      const res = await authFetch(`${API}/mails/inbox/${me.id}`);
       if (!res.ok) throw new Error("Failed to load notifications");
       const data = await res.json();
       setMails(Array.isArray(data) ? data : []);
@@ -49,7 +50,7 @@ export default function NotificationsPage() {
   const markRead = async (mailId) => {
     try {
       setError("");
-      const res = await fetch(`${API}/api/mails/${mailId}/read`, { method: "PATCH" });
+      const res = await authFetch(`${API}/mails/${mailId}/read`, { method: "PATCH" });
       if (!res.ok) throw new Error("Failed to mark as read");
       await load();
     } catch (e) {
@@ -63,7 +64,7 @@ export default function NotificationsPage() {
 
     try {
       setError("");
-      const res = await fetch(`${API}/api/mails/${mailId}`, { method: "DELETE" });
+      const res = await authFetch(`${API}/mails/${mailId}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Failed to delete");
       await load();
     } catch (e) {

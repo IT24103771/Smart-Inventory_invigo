@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { authFetch } from "@/lib/api";
 import { AlertTriangle } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -16,7 +17,7 @@ export default function AdminAlertsPage() {
       setLoading(true);
       setError("");
       
-      const res = await fetch(`${API}/inventory`);
+      const res = await authFetch(`${API}/inventory`);
       if (!res.ok) throw new Error("Failed to load inventory data");
       
       const data = await res.json();

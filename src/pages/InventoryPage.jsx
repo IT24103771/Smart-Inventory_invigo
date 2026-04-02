@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { authFetch } from "@/lib/api";
 import "../styles/Inventory.css";
 
 const API = "/api";
@@ -28,8 +29,8 @@ const InventoryPage = ({ role = "Staff" }) => {
       setError("");
 
       const [pRes, iRes] = await Promise.all([
-        fetch(`${API}/products`),
-        fetch(`${API}/inventory`),
+        authFetch(`${API}/products`),
+        authFetch(`${API}/inventory`),
       ]);
 
       if (!pRes.ok || !iRes.ok) {
@@ -117,9 +118,8 @@ const InventoryPage = ({ role = "Staff" }) => {
       const url = editingId ? `${API}/inventory/${editingId}` : `${API}/inventory`;
       const method = editingId ? "PUT" : "POST";
 
-      const res = await fetch(url, {
+      const res = await authFetch(url, {
         method,
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
@@ -157,7 +157,7 @@ const InventoryPage = ({ role = "Staff" }) => {
     try {
       setError("");
 
-      const res = await fetch(`${API}/inventory/${id}`, {
+      const res = await authFetch(`${API}/inventory/${id}`, {
         method: "DELETE",
       });
 

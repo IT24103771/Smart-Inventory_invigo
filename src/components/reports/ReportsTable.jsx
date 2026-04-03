@@ -14,7 +14,8 @@ const ReportsTable = ({
     onPublish, 
     onUnpublish, 
     onTogglePin, 
-    onDownload 
+    onDownload,
+    onVisibilityChange
 }) => {
     
     if (reports.length === 0) {
@@ -87,8 +88,21 @@ const ReportsTable = ({
 
                                     <td className="py-5 px-6">
                                         <div className="flex flex-col items-start gap-1 pb-1">
-                                            <div className="text-xs font-bold text-[#0F172A]/60">
-                                                Audience: <span className="text-[#0F172A]">{report.visibility}</span>
+                                            <div className="text-xs font-bold text-[#0F172A]/60 flex items-center gap-1">
+                                                Audience: 
+                                                {role === 'ADMIN' && report.status !== "Archived" ? (
+                                                    <select 
+                                                        value={report.visibility} 
+                                                        onChange={(e) => onVisibilityChange && onVisibilityChange(report.id, e.target.value)}
+                                                        className="text-[#0F172A] bg-transparent font-bold cursor-pointer outline-none hover:bg-slate-100 rounded px-1"
+                                                    >
+                                                        <option value="Admin Only">Admin Only</option>
+                                                        <option value="Staff">Staff</option>
+                                                        <option value="All">All</option>
+                                                    </select>
+                                                ) : (
+                                                    <span className="text-[#0F172A]">{report.visibility}</span>
+                                                )}
                                             </div>
                                             {report.published ? (
                                                 <div className="text-[10px] font-black uppercase tracking-widest text-[#007A5E] flex items-center gap-1 mt-1">

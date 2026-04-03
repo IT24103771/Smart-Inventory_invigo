@@ -19,6 +19,7 @@ const Dashboard = () => {
   // ✅ report status UI
   const [reportMsg, setReportMsg] = useState("");
   const [reportLoading, setReportLoading] = useState(false);
+  const [reportVisibility, setReportVisibility] = useState("Admin Only");
 
   const load = async () => {
     try {
@@ -164,13 +165,14 @@ const Dashboard = () => {
           dateRangeStart: new Date().toISOString().split('T')[0],
           dateRangeEnd: new Date().toISOString().split('T')[0],
           status: "Generated",
-          visibility: "Admin Only",
+          visibility: reportVisibility,
           format: "PDF",
           priority: "Medium",
           notes: "Generated from Dashboard view.",
           published: false,
           archived: false,
           favorite: false,
+          timestamp: Date.now(),
           pdfDataUri // Attach the file payload directly
       };
       
@@ -280,15 +282,28 @@ const Dashboard = () => {
           </div>
 
           <div className="dash-actions">
-            {/* ✅ NEW: report button */}
-            <button
-              className="btn"
-              onClick={generateReport}
-              disabled={reportLoading}
-              title="Download dashboard summary report"
-            >
-              {reportLoading ? "Generating..." : "Generate Report"}
-            </button>
+            {/* ✅ NEW: report button and visibility */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <select
+                value={reportVisibility}
+                onChange={(e) => setReportVisibility(e.target.value)}
+                className="btn btn-ghost"
+                style={{ appearance: 'auto', background: 'rgba(255, 255, 255, 0.1)', cursor: 'pointer', padding: '0 12px' }}
+                title="Select Report Audience"
+              >
+                <option value="Admin Only" style={{ color: '#000' }}>Admin Only</option>
+                <option value="Staff" style={{ color: '#000' }}>Staff</option>
+                <option value="All" style={{ color: '#000' }}>All</option>
+              </select>
+              <button
+                className="btn"
+                onClick={generateReport}
+                disabled={reportLoading}
+                title="Download dashboard summary report"
+              >
+                {reportLoading ? "Generating..." : "Generate Report"}
+              </button>
+            </div>
 
             <button className="btn btn-ghost" onClick={load}>
               Refresh

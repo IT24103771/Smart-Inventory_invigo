@@ -59,10 +59,17 @@ const ReportsManagement = ({ role }) => {
         if (filters.priority) result = result.filter(r => r.priority === filters.priority);
         if (filters.visibility) result = result.filter(r => r.visibility === filters.visibility);
 
-        // Sort: Favorites first, then newest based on generatedDate (or just ID)
+        // Sort: Favorites first, then newest based on timestamp or original array order
         return result.sort((a, b) => {
             if (a.favorite === b.favorite) {
-                return b.id.localeCompare(a.id);
+                const timeA = a.timestamp || 0;
+                const timeB = b.timestamp || 0;
+                
+                if (timeA !== timeB) {
+                    return timeB - timeA;
+                }
+                // Fallback to array index since new items are prepended
+                return reports.indexOf(a) - reports.indexOf(b);
             }
             return a.favorite ? -1 : 1;
         });
@@ -87,7 +94,7 @@ const ReportsManagement = ({ role }) => {
             toast.success("Report updated successfully");
         } else {
             const newId = `RPT-${String(reports.length + 1).padStart(3, '0')}`;
-            setReports(prev => [{ ...finalData, id: newId, generatedBy, favorite: false, archived: false }, ...prev]);
+            setReports(prev => [{ ...finalData, id: newId, generatedBy, favorite: false, archived: false, timestamp: Date.now() }, ...prev]);
             toast.success("New report created successfully");
         }
         setIsFormOpen(false);
@@ -128,6 +135,11 @@ const ReportsManagement = ({ role }) => {
 
     const handleTogglePin = (id) => {
         setReports(prev => prev.map(r => r.id === id ? { ...r, favorite: !r.favorite } : r));
+    };
+
+    const handleVisibilityChange = (id, newVisibility) => {
+        setReports(prev => prev.map(r => r.id === id ? { ...r, visibility: newVisibility } : r));
+        toast.info(`Visibility updated to ${newVisibility}`);
     };
 
     const handleDownload = async (report) => {
@@ -175,6 +187,7 @@ const ReportsManagement = ({ role }) => {
                 onUnpublish={handleUnpublish}
                 onTogglePin={handleTogglePin}
                 onDownload={handleDownload}
+                onVisibilityChange={handleVisibilityChange}
             />
 
             <ReportsForm 

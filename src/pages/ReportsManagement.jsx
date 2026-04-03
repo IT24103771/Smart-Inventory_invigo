@@ -7,24 +7,26 @@ import ReportsForm from "@/components/reports/ReportsForm";
 import ReportPreviewModal from "@/components/reports/ReportPreviewModal";
 import { Plus } from "lucide-react";
 import { toast } from "sonner"; // Using 'sonner' which is imported in App.jsx
+import { authFetch } from "@/lib/api";
 
 const ReportsManagement = ({ role }) => {
-    const [reports, setReports] = useState(() => {
-        const saved = localStorage.getItem("invigo_reports");
-        return saved ? JSON.parse(saved) : [];
-    });
+    const [reports, setReports] = useState([]);
+    
+    const fetchReports = async () => {
+        try {
+            const res = await authFetch("/api/reports");
+            if (res.ok) {
+                const data = await res.json();
+                setReports(data.sort((a,b) => b.id - a.id));
+            }
+        } catch (e) {
+            console.error(e);
+            toast.error("Failed to fetch reports");
+        }
+    };
 
     useEffect(() => {
-        localStorage.setItem("invigo_reports", JSON.stringify(reports));
-    }, [reports]);
-
-    useEffect(() => {
-        const handleStorage = () => {
-            const saved = localStorage.getItem("invigo_reports");
-            if (saved) setReports(JSON.parse(saved));
-        };
-        window.addEventListener("storage", handleStorage);
-        return () => window.removeEventListener("storage", handleStorage);
+        fetchReports();
     }, []);
     const [filters, setFilters] = useState({ search: '', type: '', status: '', priority: '', visibility: '' });
     
@@ -39,24 +41,22 @@ const ReportsManagement = ({ role }) => {
 
         // 1. Role-based Visibility Pre-filter
         if (role !== "ADMIN") {
-            // Staff can only see 'Staff' or 'All' visibility. (Hide Admin Only and Archived)
-            result = result.filter(r => (r.visibility === "Staff" || r.visibility === "All") && !r.archived);
+            // Staff can only see 'STAFF' or 'ALL' visibility. 
+            result = result.filter(r => (r.visibility === "STAFF" || r.visibility === "ALL"));
         }
 
         // 2. Search
         if (filters.search) {
             const q = filters.search.toLowerCase();
             result = result.filter(r => 
-                r.reportTitle.toLowerCase().includes(q) || 
-                r.reportType.toLowerCase().includes(q) ||
-                r.generatedBy.toLowerCase().includes(q)
+                (r.reportTitle && r.reportTitle.toLowerCase().includes(q)) || 
+                (r.reportType && r.reportType.toLowerCase().includes(q)) ||
+                (r.createdBy && r.createdBy.toLowerCase().includes(q))
             );
         }
 
         // 3. Dropdowns
         if (filters.type) result = result.filter(r => r.reportType === filters.type);
-        if (filters.status) result = result.filter(r => r.status === filters.status);
-        if (filters.priority) result = result.filter(r => r.priority === filters.priority);
         if (filters.visibility) result = result.filter(r => r.visibility === filters.visibility);
 
         // Sort: Favorites first, then newest based on timestamp or original array order
@@ -76,82 +76,95 @@ const ReportsManagement = ({ role }) => {
     }, [reports, filters, role]);
 
     // Handlers
-    const handleSaveReport = (data) => {
-        const user = getCurrentUser();
-        const generatedBy = user ? user.name || user.username : "Unknown User";
+    const handleSaveReport = async (data) => {
+        try {
+            const requestBody = {
+                reportTitle: data.reportTitle,
+                reportType: data.reportType,
+                startDate: data.dateRangeStart || null,
+                endDate: data.dateRangeEnd || null,
+                visibility: data.visibility || "ADMIN"
+            };
 
-        const now = new Date().toISOString().split('T')[0];
-        
-        let finalData = { ...data };
-        
-        // Auto generation logic
-        if ((finalData.status === "Generated" || finalData.status === "Published") && !finalData.generatedDate) {
-            finalData.generatedDate = now;
-        }
+            const res = await authFetch("/api/reports", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(requestBody)
+            });
 
-        if (editingReport) {
-            setReports(prev => prev.map(r => r.id === editingReport.id ? { ...r, ...finalData } : r));
-            toast.success("Report updated successfully");
-        } else {
-            const newId = `RPT-${String(reports.length + 1).padStart(3, '0')}`;
-            setReports(prev => [{ ...finalData, id: newId, generatedBy, favorite: false, archived: false, timestamp: Date.now() }, ...prev]);
-            toast.success("New report created successfully");
+            if (res.ok) {
+                toast.success("New report generated and saved successfully!");
+                fetchReports();
+                setIsFormOpen(false);
+            } else {
+                toast.error("Failed to create report");
+            }
+        } catch (e) {
+            toast.error("An error occurred creating the report");
         }
-        setIsFormOpen(false);
-        setEditingReport(null);
     };
 
-    const handleDelete = (id) => {
-        if (window.confirm("Are you sure you want to permanently delete this report?")) {
-            setReports(prev => prev.filter(r => r.id !== id));
-            toast.error("Report deleted");
+    const handleDelete = async (id) => {
+        if (!window.confirm("Are you sure you want to permanently delete this report?")) return;
+        
+        try {
+            const res = await authFetch(`/api/reports/${id}`, { method: "DELETE" });
+            if (res.ok) {
+                toast.success("Report deleted successfully");
+                setReports(prev => prev.filter(r => r.id !== id));
+            } else {
+                toast.error("Failed to delete report");
+            }
+        } catch (e) {
+            toast.error("Error deleting report");
         }
     };
 
     const handleArchive = (id) => {
-        setReports(prev => prev.map(r => r.id === id ? { ...r, status: "Archived", archived: true, published: false } : r));
-        toast.info("Report archived");
+        toast.info("Archive is disabled for server-generated reports.");
     };
 
-    const handleRestore = (id) => {
-        setReports(prev => prev.map(r => r.id === id ? { ...r, status: "Draft", archived: false } : r));
-        toast.success("Report restored to Draft");
-    };
-
-    const handlePublish = (id) => {
-        setReports(prev => prev.map(r => r.id === id ? { 
-            ...r, 
-            status: "Published", 
-            published: true, 
-            generatedDate: r.generatedDate || new Date().toISOString().split('T')[0] 
-        } : r));
-        toast.success("Report published");
-    };
-
-    const handleUnpublish = (id) => {
-        setReports(prev => prev.map(r => r.id === id ? { ...r, status: "Generated", published: false } : r));
-        toast.info("Report unpublished");
-    };
-
-    const handleTogglePin = (id) => {
-        setReports(prev => prev.map(r => r.id === id ? { ...r, favorite: !r.favorite } : r));
-    };
-
-    const handleVisibilityChange = (id, newVisibility) => {
-        setReports(prev => prev.map(r => r.id === id ? { ...r, visibility: newVisibility } : r));
-        toast.info(`Visibility updated to ${newVisibility}`);
+    const handleRestore = (id) => { };
+    const handlePublish = (id) => { };
+    const handleUnpublish = (id) => { };
+    const handleTogglePin = (id) => { };
+    
+    const handleVisibilityChange = async (id, newVisibility) => {
+        try {
+            const res = await authFetch(`/api/reports/${id}/visibility?visibility=${newVisibility}`, {
+                method: "PUT"
+            });
+            if (res.ok) {
+                toast.success(`Visibility updated to ${newVisibility}`);
+                setReports(prev => prev.map(r => r.id === id ? { ...r, visibility: newVisibility } : r));
+            } else {
+                toast.error("Failed to update visibility");
+            }
+        } catch (e) {
+            toast.error("Error updating visibility");
+        }
     };
 
     const handleDownload = async (report) => {
-        if (report.pdfDataUri) {
-            toast.info("Preparing download...");
-            const a = document.createElement("a");
-            a.href = report.pdfDataUri;
-            a.download = `dashboard-summary-${report.id}.pdf`;
-            a.click();
-            toast.success("Download complete");
-        } else {
-            toast.error("File stream expired or no longer available.");
+        toast.info("Preparing download from server...");
+        
+        try {
+            const res = await authFetch(`/api/reports/${report.id}/download`);
+            if (res.ok) {
+                const blob = await res.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `Report_${report.reportType}_${report.id}.pdf`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                toast.success("Download complete");
+            } else {
+                toast.error("Failed to download PDF stream");
+            }
+        } catch (e) {
+            toast.error("Download failed");
         }
     };
 

@@ -2,10 +2,7 @@ import React from "react";
 import { Search, Filter } from "lucide-react";
 
 export const reportTypes = [
-    "Expired Items Report", "Near Expiry Report", "Sales Report", 
-    "Inventory Summary", "Low Stock Report", "Discount Report", 
-    "AI Risk Prediction Report", "Loss Analysis Report", 
-    "Monthly Summary", "Weekly Summary", "Custom Report"
+    "EXPIRED", "NEAR_EXPIRY", "SALES", "INVENTORY"
 ];
 
 const ReportsFilters = ({ filters, setFilters }) => {
@@ -15,7 +12,7 @@ const ReportsFilters = ({ filters, setFilters }) => {
                 <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-[#0F172A]/40" />
                 <input 
                     type="text" 
-                    placeholder="Search reports by title, type, or author..." 
+                    placeholder="Search reports by title or author..." 
                     className="w-full pl-12 pr-4 py-3 rounded-2xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#007A5E]/20 focus:border-[#007A5E] text-sm font-medium transition-all"
                     value={filters.search}
                     onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
@@ -34,43 +31,21 @@ const ReportsFilters = ({ filters, setFilters }) => {
                     onChange={(e) => setFilters(prev => ({ ...prev, type: e.target.value }))}
                 >
                     <option value="">All Types</option>
-                    {reportTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                    <option value="INVENTORY">Inventory Summary</option>
+                    <option value="SALES">Sales Report</option>
+                    <option value="EXPIRED">Expired Items Report</option>
+                    <option value="NEAR_EXPIRY">Near Expiry Report</option>
                 </select>
 
-                <select 
-                    className="py-2.5 pl-4 pr-8 rounded-xl bg-white border border-slate-200 text-sm font-medium focus:outline-none focus:border-[#007A5E] cursor-pointer"
-                    value={filters.status}
-                    onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}
-                >
-                    <option value="">All Statuses</option>
-                    <option value="Draft">Draft</option>
-                    <option value="Pending">Pending</option>
-                    <option value="Generated">Generated</option>
-                    <option value="Published">Published</option>
-                    <option value="Archived">Archived</option>
-                </select>
-
-                <select 
-                    className="py-2.5 pl-4 pr-8 rounded-xl bg-white border border-slate-200 text-sm font-medium focus:outline-none focus:border-[#007A5E] cursor-pointer"
-                    value={filters.priority}
-                    onChange={(e) => setFilters(prev => ({ ...prev, priority: e.target.value }))}
-                >
-                    <option value="">All Priorities</option>
-                    <option value="Critical">Critical</option>
-                    <option value="High">High</option>
-                    <option value="Medium">Medium</option>
-                    <option value="Low">Low</option>
-                </select>
-                
                 <select 
                     className="py-2.5 pl-4 pr-8 rounded-xl bg-white border border-slate-200 text-sm font-medium focus:outline-none focus:border-[#007A5E] cursor-pointer"
                     value={filters.visibility}
                     onChange={(e) => setFilters(prev => ({ ...prev, visibility: e.target.value }))}
                 >
                     <option value="">Any Visibility</option>
-                    <option value="Admin Only">Admin Only</option>
-                    <option value="Staff">Staff</option>
-                    <option value="All">All</option>
+                    <option value="ADMIN">Admin Only</option>
+                    <option value="STAFF">Staff</option>
+                    <option value="ALL">All</option>
                 </select>
             </div>
         </div>

@@ -54,130 +54,27 @@ const Dashboard = () => {
       setReportMsg("");
       setError("");
 
-      // Create jsPDF Instance
-      const doc = new jsPDF();
-      
-      // --- HEADER ---
-      // Background `#0F172A`
-      doc.setFillColor(15, 23, 42); 
-      doc.rect(0, 0, 210, 40, 'F');
-      
-      // Logo "INVIGO" in brand green `#007A5E` combined with white
-      doc.setTextColor(0, 122, 94); // #007A5E
-      doc.setFontSize(26);
-      doc.setFont("helvetica", "bold");
-      doc.text("INVIGO", 14, 25);
-      
-      // Vertical separator
-      doc.setDrawColor(255, 255, 255);
-      doc.setLineWidth(0.5);
-      doc.line(55, 15, 55, 28);
-      
-      // Title
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(16);
-      doc.setFont("helvetica", "normal");
-      doc.text("System Intelligence Report", 60, 24);
-      
-      // Date & Metadata right side
-      doc.setFontSize(10);
-      doc.text(`Generated: ${new Date().toLocaleDateString()}`, 196, 20, { align: "right" });
-      const activeUser = getCurrentUser();
-      const generatorName = activeUser ? (activeUser.name || activeUser.username) : "System";
-      doc.text(`By: ${generatorName}`, 196, 26, { align: "right" });
-
-      // --- SUMMARY STATS ---
-      doc.setTextColor(15, 23, 42); // slate-900
-      doc.setFontSize(14);
-      doc.setFont("helvetica", "bold");
-      doc.text("Dashboard Summary", 14, 52);
-      
-      doc.setFontSize(10);
-      doc.setFont("helvetica", "normal");
-      const sY = 62;
-      doc.text(`Total Products: ${summary?.totalProducts || 0}`, 14, sY);
-      doc.text(`Total Stock Qty: ${summary?.totalStockQty || 0}`, 70, sY);
-      doc.text(`Active Discounts: ${summary?.activeDiscounts || 0}`, 140, sY);
-      
-      doc.text(`Low Stock Batches: ${summary?.lowStockBatches || 0}`, 14, sY + 8);
-      doc.text(`Expired Batches: ${summary?.expiredBatches || 0}`, 70, sY + 8);
-      doc.text(`Expiring Soon (\u2264 7 days): ${summary?.expiringSoonBatches || 0}`, 140, sY + 8);
-
-      // --- NEAR EXPIRY TABLE (Using jspdf-autotable) ---
-      doc.setFontSize(14);
-      doc.setFont("helvetica", "bold");
-      doc.text("High Risk Inventory (Near Expiry / Expired)", 14, sY + 24);
-
-      // We need to compute the nearExpiryList inside this function to ensure it's available
-      const computedExpiryList = inventory.filter((x) => {
-        const st = (x.status || "").toLowerCase();
-        return st.includes("expiring") || st.includes("expired");
-      });
-
-      const tableData = computedExpiryList.map(item => [
-          item.productName || item.productId,
-          item.batchNumber,
-          item.expiryDate,
-          item.quantity,
-          item.status
-      ]);
-
-      if(tableData.length === 0) {
-          tableData.push(["No high risk inventory items found.", "", "", "", ""]);
-      }
-
-      autoTable(doc, {
-          startY: sY + 30,
-          head: [['Product', 'Batch', 'Expiry Date', 'Qty', 'Status']],
-          body: tableData,
-          theme: 'grid',
-          headStyles: { fillColor: [0, 122, 94] },
-          styles: { fontSize: 9, cellPadding: 4, textColor: [15, 23, 42] },
-          alternateRowStyles: { fillColor: [248, 250, 252] },
-          margin: { left: 14, right: 14 }
-      });
-      
-      // Make Report ID
-      const reportId = `RPT-${Math.floor(1000 + Math.random() * 9000)}`;
-
-      // Save PDF
-      doc.save(`dashboard-summary-${reportId}.pdf`);
-      
-      const pdfDataUri = doc.output('datauristring');
-
-      // Mock delay
       await new Promise(r => setTimeout(r, 600));
 
-      setReportMsg(`Report generated successfully! Report ID: ${reportId}`);
-      
-      const existingStr = localStorage.getItem("invigo_reports");
-      const existing = existingStr ? JSON.parse(existingStr) : [];
-      const userStr = localStorage.getItem("invigo_usr");
-      const user = userStr ? JSON.parse(userStr) : null;
-      
-      const newReportLog = {
-          id: reportId || `RPT-${Math.floor(1000 + Math.random() * 9000)}`,
-          reportTitle: "Dashboard Summary Export",
-          reportType: "System Report",
-          description: "Auto-generated dashboard summary exported to PDF.",
-          generatedBy: user ? (user.name || user.username) : "System",
-          generatedDate: new Date().toISOString().split('T')[0],
-          dateRangeStart: new Date().toISOString().split('T')[0],
-          dateRangeEnd: new Date().toISOString().split('T')[0],
-          status: "Generated",
-          visibility: reportVisibility,
-          format: "PDF",
-          priority: "Medium",
-          notes: "Generated from Dashboard view.",
-          published: false,
-          archived: false,
-          favorite: false,
-          timestamp: Date.now(),
-          pdfDataUri // Attach the file payload directly
+      const requestBody = {
+        reportTitle: "Dashboard Summary Export",
+        reportType: "INVENTORY",
+        startDate: null,
+        endDate: null,
+        visibility: reportVisibility || "ADMIN"
       };
+
+      const res = await authFetch("/api/reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody)
+      });
       
-      localStorage.setItem("invigo_reports", JSON.stringify([newReportLog, ...existing]));
-      window.dispatchEvent(new Event("storage"));
+      if (!res.ok) {
+          throw new Error("Failed to register dashboard report on backend");
+      }
+      const data = await res.json();
+      setReportMsg(`Report generated successfully! Report ID: ${data.id}`);
       
     } catch (e) {
       setReportMsg("");
@@ -291,9 +188,9 @@ const Dashboard = () => {
                 style={{ appearance: 'auto', background: 'rgba(255, 255, 255, 0.1)', cursor: 'pointer', padding: '0 12px' }}
                 title="Select Report Audience"
               >
-                <option value="Admin Only" style={{ color: '#000' }}>Admin Only</option>
-                <option value="Staff" style={{ color: '#000' }}>Staff</option>
-                <option value="All" style={{ color: '#000' }}>All</option>
+                <option value="ADMIN" style={{ color: '#000' }}>Admin Only</option>
+                <option value="STAFF" style={{ color: '#000' }}>Staff</option>
+                <option value="ALL" style={{ color: '#000' }}>All</option>
               </select>
               <button
                 className="btn"

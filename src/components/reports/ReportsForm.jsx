@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Save, AlertCircle } from "lucide-react";
-import { reportTypes } from "./ReportsFilters";
 
 const ReportsForm = ({ open, setOpen, report = null, onSave }) => {
     const [formData, setFormData] = useState({
@@ -56,6 +55,17 @@ const ReportsForm = ({ open, setOpen, report = null, onSave }) => {
         if (formData.dateRangeStart && formData.dateRangeEnd) {
             if (new Date(formData.dateRangeStart) > new Date(formData.dateRangeEnd)) {
                 newErrors.dateRangeEnd = "End Date cannot be before Start Date";
+            }
+        }
+        
+        if (formData.reportType === "SALES" || formData.reportType === "EXPIRED") {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            if (formData.dateRangeStart && new Date(formData.dateRangeStart) > today) {
+                newErrors.dateRangeStart = "Cannot select future dates for historical reports";
+            }
+            if (formData.dateRangeEnd && new Date(formData.dateRangeEnd) > today) {
+                newErrors.dateRangeEnd = "Cannot select future dates for historical reports";
             }
         }
 
@@ -132,22 +142,18 @@ const ReportsForm = ({ open, setOpen, report = null, onSave }) => {
                                         onChange={e => setFormData({...formData, reportType: e.target.value})}
                                     >
                                         <option value="">Select a type...</option>
-                                        {reportTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                                        <option value="INVENTORY">Inventory Summary</option>
+                                        <option value="SALES">Sales Report</option>
+                                        <option value="EXPIRED">Expired Items Report</option>
+                                        <option value="NEAR_EXPIRY">Near Expiry Report</option>
                                     </select>
                                     {errors.reportType && <p className="text-red-500 text-xs mt-1 font-bold flex items-center gap-1"><AlertCircle size={12}/> {errors.reportType}</p>}
                                 </div>
                                 <div>
                                     <label className="block text-xs font-black uppercase tracking-widest text-[#0F172A]/50 mb-2">Format</label>
-                                    <select 
-                                        className="w-full p-4 rounded-2xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#007A5E]/20 focus:border-[#007A5E] font-medium transition-all appearance-none cursor-pointer"
-                                        value={formData.format}
-                                        onChange={e => setFormData({...formData, format: e.target.value})}
-                                    >
-                                        <option value="PDF">PDF</option>
-                                        <option value="CSV">CSV</option>
-                                        <option value="Excel">Excel</option>
-                                        <option value="Dashboard View">Dashboard View</option>
-                                    </select>
+                                    <div className="w-full p-4 rounded-2xl bg-slate-100 border border-slate-200 text-[#0F172A]/50 font-medium cursor-not-allowed">
+                                        PDF <span className="text-xs ml-2">(Fixed)</span>
+                                    </div>
                                 </div>
                             </div>
 
@@ -220,9 +226,9 @@ const ReportsForm = ({ open, setOpen, report = null, onSave }) => {
                                         value={formData.visibility}
                                         onChange={e => setFormData({...formData, visibility: e.target.value})}
                                     >
-                                        <option value="Admin Only">Admin Only</option>
-                                        <option value="Staff">Staff</option>
-                                        <option value="All">All</option>
+                                        <option value="ADMIN">Admin Only</option>
+                                        <option value="STAFF">Staff</option>
+                                        <option value="ALL">All</option>
                                     </select>
                                 </div>
                             </div>

@@ -5,7 +5,7 @@ export const reportTypes = [
     "EXPIRED", "NEAR_EXPIRY", "SALES", "INVENTORY"
 ];
 
-const ReportsFilters = ({ filters, setFilters }) => {
+const ReportsFilters = ({ filters, setFilters, role }) => {
     return (
         <div className="bg-white p-6 rounded-3xl border border-[#0F172A]/5 shadow-sm mb-8 flex flex-col md:flex-row gap-4 items-center justify-between">
             <div className="relative w-full md:w-96">
@@ -37,16 +37,18 @@ const ReportsFilters = ({ filters, setFilters }) => {
                     <option value="NEAR_EXPIRY">Near Expiry Report</option>
                 </select>
 
-                <select 
-                    className="py-2.5 pl-4 pr-8 rounded-xl bg-white border border-slate-200 text-sm font-medium focus:outline-none focus:border-[#007A5E] cursor-pointer"
-                    value={filters.visibility}
-                    onChange={(e) => setFilters(prev => ({ ...prev, visibility: e.target.value }))}
-                >
-                    <option value="">Any Visibility</option>
-                    <option value="ADMIN">Admin Only</option>
-                    <option value="STAFF">Staff</option>
-                    <option value="ALL">All</option>
-                </select>
+                {role === "ADMIN" && (
+                    <select 
+                        className="py-2.5 pl-4 pr-8 rounded-xl bg-white border border-slate-200 text-sm font-medium focus:outline-none focus:border-[#007A5E] cursor-pointer"
+                        value={filters.visibility}
+                        onChange={(e) => setFilters(prev => ({ ...prev, visibility: e.target.value }))}
+                    >
+                        <option value="">Any Visibility</option>
+                        <option value="ADMIN">Admin Only</option>
+                        <option value="STAFF">Staff</option>
+                        <option value="ALL">All</option>
+                    </select>
+                )}
             </div>
         </div>
     );

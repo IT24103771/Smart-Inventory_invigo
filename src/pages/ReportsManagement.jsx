@@ -42,7 +42,10 @@ const ReportsManagement = ({ role }) => {
         // 1. Role-based Visibility Pre-filter
         if (role !== "ADMIN") {
             // Staff can only see 'STAFF' or 'ALL' visibility. 
-            result = result.filter(r => (r.visibility === "STAFF" || r.visibility === "ALL"));
+            result = result.filter(r => {
+                const rv = (r.visibility || "").toUpperCase();
+                return rv === "STAFF" || rv === "ALL";
+            });
         }
 
         // 2. Search
@@ -57,7 +60,12 @@ const ReportsManagement = ({ role }) => {
 
         // 3. Dropdowns
         if (filters.type) result = result.filter(r => r.reportType === filters.type);
-        if (filters.visibility) result = result.filter(r => r.visibility === filters.visibility);
+        if (filters.visibility) {
+            result = result.filter(r => {
+                const rv = (r.visibility || "").toUpperCase().replace(" ONLY", "");
+                return rv === filters.visibility.toUpperCase();
+            });
+        }
 
         // Sort: Favorites first, then newest based on timestamp or original array order
         return result.sort((a, b) => {
@@ -186,7 +194,7 @@ const ReportsManagement = ({ role }) => {
             </div>
 
             <ReportsStats reports={reports} />
-            <ReportsFilters filters={filters} setFilters={setFilters} />
+            <ReportsFilters filters={filters} setFilters={setFilters} role={role} />
             
             <ReportsTable 
                 reports={filteredReports} 
